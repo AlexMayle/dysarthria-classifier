@@ -17,10 +17,9 @@ def loadWavFilesWithLabels(directory, label):
     wavFilenames = [filename for filename in filenames if filename[-4:] == ".wav"]
 
     examples = []
-    indices = range(len(wavFilenames))
-    for i, wavFile in zip(indices, wavFilenames):
+    for path in wavFilenames:
         example = []
-        _, wavData = wav.read(wavFile)
+        _, wavData = wav.read(path)
         example.append(wavData)
         example.append(label)
         examples.append(example)
