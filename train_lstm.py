@@ -8,65 +8,26 @@ from python_speech_features import mfcc
 from preprocess import poolMfccs
 
 SAMPLE_RATE = 44100
-POOLED_MFCC_SIZE = 60
+DATA_DIR = ""
 
 ########### Convolutional neural network class ############
-class ConvNet(object):
+class LSTMNet(object):
   def __init__(self, mode):
     self.mode = mode
  
   # Read train, valid and test data.
-  def read_data(self):
-    """
-    print("[*] Converting wav files to mfcc features")
-    trainX = list(map(lambda x: mfcc(x, samplerate= SAMPLE_RATE), train_set[0]))
-    testX = list(map(lambda x: mfcc(x, samplerate= SAMPLE_RATE), test_set[0]))
-
-    print("[*] Saving mfcc features to disk for later use")
-    print(trainX[0].shape)
-    with open("mfcc_train_set.pkl", "wb") as f:
-      pickle.dump(trainX, f)
-    with open("mfcc_test_set.pkl", "wb") as f:
-      pickle.dump(testX, f)
-    
+  def read_data(self, train_set, test_set):
     print("[*] Loading mfcc features from disk")
-    with open("mfcc_train_set.pkl", "rb") as f:
+    with open(DATA_DIR + "mfcc_train_set.pkl", "rb") as f:
       trainX = pickle.load(f)
-    with open("mfcc_test_set.pkl", "rb") as f:
+    with open(DATA_DIR + "mfcc_test_set.pkl", "rb") as f:
       testX = pickle.load(f)
-
-    trainX = [trainX, train_set[1]]
-    testX = [testX, test_set[1]]
-    print("[*] Saving mfcc features to disk for later use")
-    with open("mfcc_train_set.pkl", "wb") as f:
-      pickle.dump(trainX, f)
-    with open("mfcc_test_set.pkl", "wb") as f:
-      pickle.dump(testX, f)
-    
-    print("[*] Pooling mfcc features to fixed size")
-    trainX[0] = poolMfccs(trainX[0], POOLED_MFCC_SIZE)
-    testX[0] = poolMfccs(testX[0], POOLED_MFCC_SIZE)
-    
-    print("[*] Saving pooled mfcc features for later use")
-    print(trainX[0].shape)
-    with open("pooled_train_set.pkl", "wb") as f:
-      pickle.dump(trainX, f)
-    with open("pooled_test_set.pkl", "wb") as f:
-      pickle.dump(testX, f)    
-    """
-    print("[*] Loading pooled mfcc features from disk")
-    with open("pooled_train_set.pkl", "rb") as f:
-      trainX = pickle.load(f)
-    with open("pooled_test_set.pkl", "rb") as f:
-      testX = pickle.load(f)
-
-    """
+      
     # Load labels
     trainY = np.asarray(train_set[1])
     testY = np.asarray(test_set[1])
-    """
-    
-    return trainX[0], trainX[1], testX[0], testX[1]
+
+    return trainX, trainY, testX, testY
 
   # Baseline model.
   def model_1(self, X, hidden_size):
@@ -92,7 +53,7 @@ class ConvNet(object):
     return fcl
 
   # Entry point for training and evaluation.
-  def train_and_evaluate(self, FLAGS):
+  def train_and_evaluate(self, FLAGS, train_set, test_set):
     class_num     = 2
     num_epochs    = FLAGS.num_epochs
     batch_size    = FLAGS.batch_size
@@ -100,7 +61,7 @@ class ConvNet(object):
     hidden_size   = FLAGS.hiddenSize
     decay         = FLAGS.decay
 
-    trainX, trainY, testX, testY = self.read_data()
+    trainX, trainY, testX, testY = self.read_data(train_set, test_set)
     print("[*] Preprocessing done")
 
     

@@ -11,13 +11,10 @@ import pickle
 import numpy
 from python_speech_features import mfcc
 import tensorflow as tf
-from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.examples.tutorials.mnist import mnist
-from tensorflow.contrib.learn.python.learn.datasets.mnist import DataSet
 
 from loadData import loadDataSet
 from train_cnn import ConvNet
-
+from train_lstm import LSTMNet
 
 # Set parameters for Sparse Autoencoder
 parser = argparse.ArgumentParser('CNN Exercise.')
@@ -67,8 +64,8 @@ mode = int(sys.argv[1])
 
 # ======================================================================
 #  STEP 0: Load data
-trainSet = loadDataSet("train_set.pkl")
-testSet = loadDataSet("test_set.pkl")
+#trainSet = loadDataSet("train_set.pkl")
+#testSet = loadDataSet("test_set.pkl")
 
 # ======================================================================
 #  STEP 1: Train a baseline model.
@@ -78,10 +75,22 @@ if mode == 1:
   FLAGS.batch_size = 30
   FLAGS.num_epochs = 100
   cnn = ConvNet(1)
-  accuracy = cnn.train_and_evaluate(FLAGS, trainSet, testSet)
+  accuracy = cnn.train_and_evaluate(FLAGS)
 
   # Output accuracy.
-  print(20 * '*' + 'model 1' + 20 * '*')
+  print(20 * '*' + ' model 1 (Baseline)' + 20 * '*')
   print('accuracy is %f' % (accuracy))
   print()
 
+
+# ====================================================================
+# STEP 2: Train an LSTM model.
+
+if mode == 2:
+  lstm = LSTMNet(1)
+  accuracy = lstm.train_and_evaluate(FLAGS, trainSet, testSet)
+
+  # Output accuracy.
+  print(20 * '*' + ' model 2 (LSTM 1) ' + 20 * '*')
+  print('accuracy is %f' % (accuracy))
+  print()
