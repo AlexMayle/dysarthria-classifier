@@ -16,13 +16,21 @@ def loadWavFilesWithLabels(directory, label):
     filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(directory) for f in fn]
     wavFilenames = [filename for filename in filenames if filename[-4:] == ".wav"]
 
+    discardCount = 0
     examples = []
     for path in wavFilenames:
         example = []
         _, wavData = wav.read(path)
-        example.append(wavData)
-        example.append(label)
-        examples.append(example)
+        # Samples over 5 seconds should be discarded
+        if len(wavData) / 44100 < 5:
+            example.append(wavData)
+            example.append(label)
+            examples.append(example)
+        else:
+            print("Warning: ", path, " is being discarded for being too long")
+            discardCount += 1
+
+    print("Total filtered out of dataset: ", discardCount)
     return examples
 
 # Gather all .wav files and create associated labels

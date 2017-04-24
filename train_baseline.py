@@ -5,13 +5,12 @@ import pickle
 import numpy as np
 
 from python_speech_features import mfcc
-from preprocess import poolMfccs
+from preprocess import *
 
 SAMPLE_RATE = 44100
 POOLED_MFCC_SIZE = 60
 
-########### Convolutional neural network class ############
-class ConvNet(object):
+class Baseline(object):
   def __init__(self, mode):
     self.mode = mode
  
@@ -42,30 +41,31 @@ class ConvNet(object):
       pickle.dump(trainX, f)
     with open("mfcc_test_set.pkl", "wb") as f:
       pickle.dump(testX, f)
+
+    trainX, testX = createMfccDataset()
     
     print("[*] Pooling mfcc features to fixed size")
     trainX[0] = poolMfccs(trainX[0], POOLED_MFCC_SIZE)
     testX[0] = poolMfccs(testX[0], POOLED_MFCC_SIZE)
     
     print("[*] Saving pooled mfcc features for later use")
-    print(trainX[0].shape)
     with open("pooled_train_set.pkl", "wb") as f:
       pickle.dump(trainX, f)
     with open("pooled_test_set.pkl", "wb") as f:
       pickle.dump(testX, f)    
+    
     """
     print("[*] Loading pooled mfcc features from disk")
     with open("pooled_train_set.pkl", "rb") as f:
       trainX = pickle.load(f)
     with open("pooled_test_set.pkl", "rb") as f:
       testX = pickle.load(f)
-
+      
     """
     # Load labels
     trainY = np.asarray(train_set[1])
     testY = np.asarray(test_set[1])
     """
-    
     return trainX[0], trainX[1], testX[0], testX[1]
 
   # Baseline model.
@@ -78,7 +78,7 @@ class ConvNet(object):
     
     # flatten all last dimensions
     XFlat = tf.reshape(X, [-1, POOLED_MFCC_SIZE * 13]) 
-    w1_init = tf.truncated_normal([POOLED_MFCC_SIZE * 13, hidden_size], stddev=0.5)
+    w1_init = tf.truncated_normal([POOLED_MFCC_SIZE * 13, hidden_size], stddev=0.1)
     # Why didn't the below work ?? #
     #w1_init = tf.random_uniform([784, hidden_size])
     b1_init = tf.zeros([hidden_size])
@@ -136,7 +136,7 @@ class ConvNet(object):
       # Define training op, use the loss.
       # ----------------- YOUR CODE HERE ----------------------
       #
-      optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+      optimizer = tf.train.AdamOptimizer()
       train_op = optimizer.minimize(loss)
 
       # ======================================================================
