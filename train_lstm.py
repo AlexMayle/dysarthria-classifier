@@ -64,8 +64,9 @@ class LSTMNet(object):
     # so the RNN does not work on the padded sections
     # of each example
     lengths = self.getExampleLengths(X)
-    lstmCell = tf.contrib.rnn.LSTMBlockCell(hidden_size)
-    output, state = tf.nn.dynamic_rnn(lstmCell, X, sequence_length= lengths, dtype= tf.float32)
+    with tf.name_scope("lstm"):
+      lstmCell = tf.contrib.rnn.LSTMBlockCell(hidden_size)
+      output, state = tf.nn.dynamic_rnn(lstmCell, X, sequence_length= lengths, dtype= tf.float32)
     # Get the last output for each example
     lastOutputs = self.getLastOutput(output, lengths)
     return lastOutputs
@@ -100,8 +101,9 @@ class LSTMNet(object):
       logits = tf.matmul(features, softmax_W1) + softmax_b1
 
       # Define loss function, use the logits.
-      loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
-                                                                           labels=Y))
+      #params = tf.trainable_variables()
+      #l2_reg = sum([tf.nn.l2_loss(param) for param in params if "Bias" not in param.name])
+      loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,                                                                    labels=Y))
       # Define training op, use the loss.
       optimizer = tf.train.AdamOptimizer()
       train_op = optimizer.minimize(loss)
