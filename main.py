@@ -77,9 +77,11 @@ if mode == 1:
 
 if mode == 2:
   lstm = LSTMNet(1)
-  accuracy = lstm.train_and_evaluate(FLAGS)
+  accuracy, precision, recall = lstm.train_and_evaluate(FLAGS)
 
   # Output accuracy.
   print(20 * '*' + ' model 2 (LSTM 1) ' + 20 * '*')
-  print('accuracy is %f' % (accuracy))
+  print('accuracy is %f' % accuracy)
+  print("precision is %f" % precision)
+  print("recall is %f" % recall)
   print()

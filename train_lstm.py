@@ -4,8 +4,9 @@ import math
 import pickle
 import numpy as np
 
+from sklearn import metrics
 from python_speech_features import mfcc
-from preprocess import *
+import preprocess
 
 SAMPLE_RATE = 44100
 MFCC_SIZE = 13
@@ -51,6 +52,42 @@ class LSTMNet(object):
     flat = tf.reshape(output, [-1, out_size])
     relevant = tf.gather(flat, index)
     return relevant
+
+  def test(self, sess, pred_op, X, data, Y, labels, batch_size, is_train):
+    """
+      sess:        Session to run pred_op in
+      pred_op:     Op to get predictions from model
+      X:           Placeholder to feed data into
+      data:        data to be feed into X placeholder
+      Y:           Placeholder to feed labels into
+      labels:      labels to be placed into Y
+      batch_size:  Batch size to use when interating through data
+      is_train:    Placeholder to designate if its training or testing time
+
+      Returns:
+        Accuracy, precision, and recall of the model as measured by
+        the models predictions and ground truth labels
+    """
+    
+    numExamples = len(data)
+    accuracy = 0.0
+    precision = 0.0
+    recall = 0.0
+    predictions = np.zeros([numExamples])
+    s = 0
+    while s < numExamples:
+      e = min(s + batch_size, numExamples)
+      batch_x = data[s : e]
+      batch_x, _ = preprocess.padBatch(batch_x)
+      batch_y = labels[s : e]
+      predictions[s:e] = sess.run(pred_op, feed_dict={X: batch_x, Y: batch_y, is_train: False})
+      s = e
+
+    accuracy = np.sum(predictions == labels) / numExamples
+    precision = metrics.precision_score(labels, predictions)
+    recall = metrics.recall_score(labels, predictions)
+
+    return accuracy, precision, recall
   
   # Baseline model.
   def model_1(self, X, hidden_size):
@@ -110,7 +147,7 @@ class LSTMNet(object):
 
       # Define accuracy op.
       pred = tf.cast(tf.argmax(logits, axis= 1), "int32")
-      accuracy = tf.reduce_sum(tf.cast(tf.equal(pred, Y), "float"), name= "acc")
+      accuracy = tf.reduce_sum(tf.cast(tf.equal(pred, Y), "float"))
 
       has_GPU = True
       if has_GPU:
@@ -122,7 +159,8 @@ class LSTMNet(object):
       # Create TensorFlow session with GPU setting.
       with tf.Session(config=config).as_default() as sess:
         tf.global_variables_initializer().run()
-                
+
+        # Train Loop
         for i in range(num_epochs):
           print(20 * '*', 'epoch', i+1, 20 * '*')
           start_time = time.time()
@@ -130,24 +168,17 @@ class LSTMNet(object):
           while s < len(trainX):
             e = min(s + batch_size, len(trainX))
             batch_x = trainX[s : e]
-            batch_x, outputLength = padBatch(batch_x)
+            batch_x, outputLength = preprocess.padBatch(batch_x)
             batch_y = trainY[s : e]
             sess.run(train_op, feed_dict={X: batch_x, Y: batch_y, is_train: True})
             s = e          
           end_time = time.time()
           print ('the training took: %d(s)' % (end_time - start_time))
-          s = 0
-          totalCorrect = 0
-          while s < len(testX):
-            e = min(s + batch_size, len(testX))
-            batch_x = testX[s : e]
-            batch_x, _ = padBatch(batch_x)
-            batch_y = testY[s : e]
-            correct = sess.run(accuracy, feed_dict={X: batch_x, Y: batch_y, is_train: False})
-            totalCorrect += correct
-            s = e
 
-          acc = totalCorrect / len(testX)
-          print ('accuracy of the trained model %f' % acc)
+          # Test the model incrementally, only care about accureacy during each epoch
+          accuracy, _, _ = self.test(sess, pred, X, testX, Y, testY, batch_size, is_train)
+          print ('accuracy of the trained model %f' % accuracy)
 
-        return acc
+        # After all epochs, calculate accuracy, precision, and recall
+        accuracy, precision, recall = self.test(pred, testX, testY)  
+        return accuracy, precision, recall
