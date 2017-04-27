@@ -34,8 +34,17 @@ class LSTMNet(object):
     with open("mfcc_test_set.pkl", "rb") as f:
       test = pickle.load(f)
 
+    # Normalize to 0-mean, unit-variance
     train[0] = preprocess.meanAndVarNormalize(train[0])
     test[0] = preprocess.meanAndVarNormalize(test[0])
+
+    train[0] = preprocess.zcaWhiten(train[0])
+    test[0] = preprocess.zcaWhiten(test[0])
+
+    with open("norm_mfcc_train_set.pkl", "wb") as f:
+      pickle.dump(train)
+    with open("norm_mfcc_train_set.pkl", "wb") as f:
+      pickle.dump(test)
     
     return train[0], train[1], test[0], test[1]
 

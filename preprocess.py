@@ -1,9 +1,11 @@
 import numpy as np
 import pickle
 from python_speech_features import mfcc
+from sklearn.decomposition import PCA
 
 SAMPLE_RATE = 44100
 MFCC_SIZE = 13
+WHITENING_EPSILON = 0.1
 
 def createMfccDataset():
     train_set = loadDataSet("train_set.pkl")
@@ -79,4 +81,16 @@ def meanAndVarNormalize(dataset):
         example = example / variances
         
     return dataset
+
+def zcaWhiten(dataset):
+    exampleLengths = [example.shape[0] for example in dataset]
+    dataMatrix = np.concatenate(dataset)
+    print("Dataset concatenated")
+    u, s, v = decomposition.PCA(dataMatrix, full_matrices=False)
+    xPCA = np.matmul(u.T, dataMatrix)
+    print("PCA done")
+    delta = np.diag(np.reciprocal(s + WHITENING_EPSILON))
+    xPCAWhite = np.matmul(np.matmul(delta, u.T), xPCA)
+    xZCAWhite = np.matmul(u, xPCAWhite)
+    return np.split(xZCAWhite, exampleLengths, axis= 0)
 
