@@ -3,6 +3,7 @@ import pickle
 from python_speech_features import mfcc
 
 SAMPLE_RATE = 44100
+MFCC_SIZE = 13
 
 def createMfccDataset():
     train_set = loadDataSet("train_set.pkl")
@@ -52,6 +53,30 @@ def poolMfccs(mfccs, vectorSize):
     return pooledMfccs
 
 def padBatch(mfccs):
-    outputLength = min(max([x.shape[0] for x in mfccs]), 200)
+    outputLength = min(max([x.shape[0] for x in mfccs]), 250)
     paddedMfccs = poolMfccs(mfccs, outputLength)
     return paddedMfccs, outputLength
+
+
+def meanAndVarNormalize(dataset):
+    # Calculate averages
+    totals = np.zeros(MFCC_SIZE)
+    numPoints = 0
+    for example in dataset:
+        totals = totals + np.sum(example, axis= 0)
+        numPoints += example.shape[0]
+        
+    # Mean Normalization
+    averages = totals / numPoints
+    distanceFromMean = np.zeros(MFCC_SIZE)
+    for example in dataset:
+        example = example - averages
+        distanceFromMean += np.sum(np.square(example), axis= 0)
+
+    # Variance normalization
+    variances = distanceFromMean / numPoints
+    for example in dataset:
+        example = example / variances
+        
+    return dataset
+

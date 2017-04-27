@@ -85,3 +85,32 @@ if mode == 2:
   print("precision is %f" % precision)
   print("recall is %f" % recall)
   print()
+
+# ====================================================================
+# STEP 3: Train a 2-Layer LSTM model.
+
+if mode == 3:
+  lstm = LSTMNet(2)
+  accuracy, precision, recall = lstm.train_and_evaluate(FLAGS)
+
+  # Output accuracy.
+  print(20 * '*' + ' model 3 (LSTM 2) ' + 20 * '*')
+  print('accuracy is %f' % accuracy)
+  print("precision is %f" % precision)
+  print("recall is %f" % recall)
+  print()
+
+# ====================================================================
+# STEP 4: Train a 1-Layer Bidirectional LSTM model.
+
+if mode == 4:
+  lstm = LSTMNet(3)
+  accuracy, precision, recall = lstm.train_and_evaluate(FLAGS)
+
+  # Output accuracy.
+  print(20 * '*' + ' model 4 (LSTM 3) ' + 20 * '*')
+  print('accuracy is %f' % accuracy)
+  print("precision is %f" % precision)
+  print("recall is %f" % recall)
+  print()
+  
