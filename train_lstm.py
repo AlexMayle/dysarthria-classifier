@@ -38,14 +38,12 @@ class LSTMNet(object):
     train[0] = preprocess.meanAndVarNormalize(train[0])
     test[0] = preprocess.meanAndVarNormalize(test[0])
 
-    train[0] = preprocess.zcaWhiten(train[0])
-    test[0] = preprocess.zcaWhiten(test[0])
+    # It requires too much memory (roughfully 32GB)
+    # to hold the covariance matrix neccessary to do
+    # ZCA whitening, so we'll skip for now
+    #train[0] = preprocess.zcaWhiten(train[0])
+    #test[0] = preprocess.zcaWhiten(test[0])
 
-    with open("norm_mfcc_train_set.pkl", "wb") as f:
-      pickle.dump(train)
-    with open("norm_mfcc_train_set.pkl", "wb") as f:
-      pickle.dump(test)
-    
     return train[0], train[1], test[0], test[1]
 
   def getExampleLengths(self, sequence):
@@ -100,7 +98,7 @@ class LSTMNet(object):
 
     return accuracy, precision, recall
   
-  def model_1(self, X, hidden_size):
+  def model_1(self, X, hidden_size, is_train):
     # ======================================================================
     # Single Layer LSTM over full example sequence
     # Expected: ~87.4%
@@ -109,6 +107,7 @@ class LSTMNet(object):
     # so the RNN does not work on the padded sections
     # of each example
     lengths = self.getExampleLengths(X)
+    
     with tf.name_scope("lstm"):
       lstmCell = tf.contrib.rnn.LSTMBlockCell(hidden_size)
       output, state = tf.nn.dynamic_rnn(lstmCell, X, sequence_length= lengths, dtype= tf.float32)
@@ -166,7 +165,6 @@ class LSTMNet(object):
     learning_rate = FLAGS.learning_rate
     hidden_size   = FLAGS.hiddenSize
     decay         = FLAGS.decay
-
     trainX, trainY, testX, testY = self.read_data()
     print("[*] Preprocessing done")
     
@@ -178,7 +176,7 @@ class LSTMNet(object):
 
       # Choose RNN Model
       if self.mode == 1: # 1-Layer LSTM
-        features = self.model_1(X, hidden_size)
+        features = self.model_1(X, hidden_size, is_train)
       if self.mode == 2: # 2-Layer LSTM
         features = self.model_2(X, hidden_size)
       if self.mode == 3: # 1-Layer Bidirectional LSTM
@@ -197,15 +195,14 @@ class LSTMNet(object):
       logits = tf.matmul(features, softmax_W1) + softmax_b1
 
       # Define loss function, use the logits.
-      params = tf.trainable_variables()
-      l2_reg = sum([tf.nn.l2_loss(param) for param in params if "weights" in param.name])
+      weights = [param for param in tf.trainable_variables() if "weights" in param.name]
+      regulizer = tf.contrib.layers.l2_regularizer(decay)
       loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                                            labels=Y))
-      #loss = loss + decay * l2_reg
+      loss = loss + tf.contrib.layers.apply_regularization(regulizer, weights)
       
       # Define training op, use the loss.
-      optimizer = tf.train.AdamOptimizer()
-      train_op = optimizer.minimize(loss)
+      train_op = tf.train.AdamOptimizer().minimize(loss)
 
       # Define accuracy op.
       pred = tf.cast(tf.argmax(logits, axis= 1), "int32")
@@ -222,6 +219,13 @@ class LSTMNet(object):
       with tf.Session(config=config).as_default() as sess:
         tf.global_variables_initializer().run()
 
+        # Override the high-level LSTM model's
+        # default hidden state initialization
+        lstmWeights = [p for p in tf.trainable_variables() if "lstm_cell/weights" in p.name]
+        lstm_init = tf.Variable(tf.truncated_normal([hidden_size + 13, hidden_size * 4],
+                                                    stddev=0.75))
+        lstmWeights[0].assign(lstm_init)
+        
         # Train Loop
         for i in range(num_epochs):
           print(20 * '*', 'epoch', i+1, 20 * '*')
