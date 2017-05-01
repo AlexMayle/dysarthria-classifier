@@ -10,6 +10,7 @@ import preprocess
 
 SAMPLE_RATE = 44100
 MFCC_SIZE = 13
+CHECKPOINT_FILEPATH = "/tmp/model.ckpt"
 
 ########### LSTM Network ##############
 class LSTMNet(object):
@@ -28,14 +29,17 @@ class LSTMNet(object):
       - A list of integers as labels for the test examples
     """
   
-    print("[*] Loading mfcc training & testing set from disk")
+    print("[*] Loading mfcc training, validation, and testing set from disk")
     with open("mfcc_train_set.pkl", "rb") as f:
       train = pickle.load(f)
+    with open("mfcc_val_set.pkl", "rb") as f:
+      val = pickle.load(f)
     with open("mfcc_test_set.pkl", "rb") as f:
       test = pickle.load(f)
 
     # Normalize to 0-mean, unit-variance
     train[0] = preprocess.meanAndVarNormalize(train[0])
+    val[0] = preprocess.meanAndVarNormalize(val[0])
     test[0] = preprocess.meanAndVarNormalize(test[0])
 
     # It requires too much memory (roughfully 32GB)
@@ -44,8 +48,16 @@ class LSTMNet(object):
     #train[0] = preprocess.zcaWhiten(train[0])
     #test[0] = preprocess.zcaWhiten(test[0])
 
-    return train[0], train[1], test[0], test[1]
+    return train[0], train[1], val[0], val[1], test[0], test[1]
 
+  def f_score(self, precision, recall):
+    return 2 * precision * recall / (precision + recall)
+  
+  def generalizationLoss(self, maxMetric, currentMetric):
+    minErr = 1 - maxMetric
+    currentErr = 1 - currentMetric
+    return 100 * (currentErr / minErr - 1)
+  
   def getExampleLengths(self, sequence):
     used = tf.sign(tf.reduce_max(tf.abs(sequence), reduction_indices=2))
     lengths = tf.reduce_sum(used, reduction_indices=1)
@@ -100,8 +112,8 @@ class LSTMNet(object):
   
   def model_1(self, X, hidden_size, is_train):
     # ======================================================================
-    # Single Layer LSTM over full example sequence
-    # Expected: ~87.4%
+    # Single Layer LSTM over full example sequence with L2 reg
+    # Expected: ~87.6%
 
     # Calculate the actual length of each example
     # so the RNN does not work on the padded sections
@@ -109,7 +121,7 @@ class LSTMNet(object):
     lengths = self.getExampleLengths(X)
     
     with tf.name_scope("lstm"):
-      lstmCell = tf.contrib.rnn.LSTMBlockCell(hidden_size)
+      lstmCell = tf.contrib.rnn.LSTMCell(hidden_size)
       output, state = tf.nn.dynamic_rnn(lstmCell, X, sequence_length= lengths, dtype= tf.float32)
     # Get the last output for each example
     lastOutputs = self.getLastOutput(output, lengths)
@@ -124,9 +136,12 @@ class LSTMNet(object):
     # so the RNN does not work on the padded sections
     # of each example
     lengths = self.getExampleLengths(X)
+    
     with tf.name_scope("lstm"):
       lstmCell = tf.contrib.rnn.LSTMBlockCell(hidden_size)
-      stackedLstmCell = tf.contrib.rnn.MultiRNNCell([lstmCell] * 2)
+      dropoutlstmCell = tf.contrib.rnn.DropoutWrapper(lstmCell, input_keep_prob= 0.5,
+                                                      output_keep_prob= 0.5)
+      stackedLstmCell = tf.contrib.rnn.MultiRNNCell([lstmCell, dropoutlstmCell])
       output, state = tf.nn.dynamic_rnn(stackedLstmCell, X,
                                         sequence_length= lengths,
                                         dtype= tf.float32)
@@ -163,13 +178,18 @@ class LSTMNet(object):
     num_epochs    = FLAGS.num_epochs
     batch_size    = FLAGS.batch_size
     learning_rate = FLAGS.learning_rate
-    hidden_size   = FLAGS.hiddenSize
+    hidden_size   = softmax_hidden_size = FLAGS.hiddenSize
     decay         = FLAGS.decay
-    trainX, trainY, testX, testY = self.read_data()
+
+    # Input / Preprocess data (some preprocessing was
+    # (already done and so generally this will just
+    # pull the preprocessed dataset from disk
+    trainX, trainY, valX, valY, testX, testY = self.read_data()
     print("[*] Preprocessing done")
-    
-    with tf.Graph().as_default():
-      # Input data
+
+    # Construct computation graph
+    with tf.Graph().as_default():      
+      # Placeholders
       X = tf.placeholder(tf.float32, [None, None, 13])
       Y = tf.placeholder(tf.int32, [None])
       is_train = tf.placeholder(tf.bool)
@@ -185,29 +205,38 @@ class LSTMNet(object):
         # are concatenating the lstm output from the forward
         # and backward pass and sending it to our softmax
         # layer
-        hidden_size = hidden_size * 2
+        softmax_hidden_size = hidden_size * 2
         
       # Define softmax layer, use the features.
-      softmax_W1 = tf.Variable(tf.random_uniform([hidden_size, class_num]),
+      softmax_W1 = tf.Variable(tf.random_uniform([softmax_hidden_size, class_num]),
                                name= "softmax-weights")
       softmax_b1 = tf.Variable(tf.zeros([class_num]),
                                name= "softmax-bias")
       logits = tf.matmul(features, softmax_W1) + softmax_b1
 
-      # Define loss function, use the logits.
+      # loss + regularization
       weights = [param for param in tf.trainable_variables() if "weights" in param.name]
+      if self.mode == 3:
+        decay /= 2
       regulizer = tf.contrib.layers.l2_regularizer(decay)
       loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                                            labels=Y))
-      loss = loss + tf.contrib.layers.apply_regularization(regulizer, weights)
+      # Only apply l2 reg to the single-layer LSTM architectures because we can't do dropout
+      if self.mode == 1 or 3:
+        loss = loss + tf.contrib.layers.apply_regularization(regulizer, weights)
       
-      # Define training op, use the loss.
+      # Optimizer
       train_op = tf.train.AdamOptimizer().minimize(loss)
 
-      # Define accuracy op.
+      # Generally I prefer to just fetch the pred op
+      # and handle the metrics in numPy, but the accuracy
+      # op will also get what you want within TensorFlow
       pred = tf.cast(tf.argmax(logits, axis= 1), "int32")
       accuracy = tf.reduce_sum(tf.cast(tf.equal(pred, Y), "float"))
 
+
+      
+      # Configure GPU use
       has_GPU = True
       if has_GPU:
         gpu_option = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
@@ -220,12 +249,24 @@ class LSTMNet(object):
         tf.global_variables_initializer().run()
 
         # Override the high-level LSTM model's
-        # default hidden state initialization
+        # default hidden state initialization (it defaults to 0's)
         lstmWeights = [p for p in tf.trainable_variables() if "lstm_cell/weights" in p.name]
+        # TODO: Make the stdDev of the initializer a hyperparameter (I already tuned it, tho)
         lstm_init = tf.Variable(tf.truncated_normal([hidden_size + 13, hidden_size * 4],
-                                                    stddev=0.75))
+                                                    stddev=0.5))
         lstmWeights[0].assign(lstm_init)
-        
+
+
+        # Get the variables we are actually trying to train (basically everything
+        # not involving the adam algorithm, which I'm not even sure why those are
+        # trainable, I suppose for hyper-parameter tuning?
+        params = tf.trainable_variables()
+        params = [p for p in params if
+                  ("adam" not in p.name and (("weights" in p.name) or "bias" in p.name))]
+        saver = tf.train.Saver(params)
+
+        maxMetric = 0
+        momentumSteps = 0
         # Train Loop
         for i in range(num_epochs):
           print(20 * '*', 'epoch', i+1, 20 * '*')
@@ -237,14 +278,34 @@ class LSTMNet(object):
             batch_x, outputLength = preprocess.padBatch(batch_x)
             batch_y = trainY[s : e]
             sess.run(train_op, feed_dict={X: batch_x, Y: batch_y, is_train: True})
-            s = e          
+            s = e
+            
           end_time = time.time()
           print ('the training took: %d(s)' % (end_time - start_time))
 
-          # Test the model incrementally, only care about accureacy during each epoch
           accuracy, _, _ = self.test(sess, pred, X, testX, Y, testY, batch_size, is_train)
-          print ('accuracy of the trained model %f' % accuracy)
-
+          print(accuracy)
+            
+          # After epoch 5, start applying early stop regularization using recall as a metric
+          # and a 5 step period to wait if the metric will rebound
+          if i >= 0:
+            _, precision, recall = self.test(sess, pred, X, valX, Y, valY, batch_size, is_train)
+            f_score = self.f_score(precision, recall)
+            if f_score >= maxMetric:
+              maxMetric = f_score
+              momentumSteps = 0
+              saver.save(sess, CHECKPOINT_FILEPATH)
+            else:
+              GL = self.generalizationLoss(maxMetric, f_score)
+              if GL > 12.5:
+                if momentumSteps > 3:
+                  print("Stopping Early. . .")
+                  saver.restore(sess, CHECKPOINT_FILEPATH)
+                  break
+                else:
+                  momentumSteps += 1
+          
+            
         # After all epochs, calculate accuracy, precision, and recall
         accuracy, precision, recall = self.test(sess, pred, X, testX, Y, testY,
                                                 batch_size, is_train)

@@ -93,3 +93,11 @@ def zcaWhiten(dataset):
     xPCAWhite = np.matmul(np.matmul(delta, u.T), xPCA)
     xZCAWhite = np.matmul(u, xPCAWhite)
     return np.split(xZCAWhite, exampleLengths, axis= 0)
+
+#print("[*] Loading val set")
+#val_set = loadDataSet("validation_set.pkl")
+#val_set[0] = list(map(lambda x: mfcc(x, SAMPLE_RATE), val_set[0]))
+#print("[*] Saving val set")
+#with open("mfcc_val_set.pkl", "wb") as f:
+#pickle.dump(val_set, f)
+
