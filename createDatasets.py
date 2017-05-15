@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 import pickle
 import scipy.io.wavfile as wav
@@ -11,6 +12,33 @@ FEMALE_HEALTHY_DIR = DATA_DIR + "female healthy"
 FEMALE_PATIENT_DIR = DATA_DIR + "female patient"
 HEALTHY_LABEL = 1
 PATIENT_LABEL = 0
+
+def loadAndGroupWavFilesWithLabels(directory, label):
+    """
+    Loads all wav files associated with each speaker,
+    groups them, and associates a label
+    
+    Returns: A list of lists of the form [[(wavFiles,) , label], ...]
+    """
+    speakerDirNames = [os.path.join(directory, dirName) for dirName in os.listdir(directory)
+                                                            if dirName[0] != '.']
+    examples = []
+    discardCount = 0
+    for dirName in speakerDirNames:
+        filenames = [os.path.join(dp, f) for dp, _, fn in os.walk(dirName) for f in fn]
+        wavFilenames = [filename for filename in filenames if filename[-4:] == ".wav"]
+        wavDataPoints = []
+        for path in wavFilenames:
+            _, wavData = wav.read(path)
+            if len(wavData) / 44100 < 5:
+                wavDataPoints.append(wavData)
+            else:
+                print("Warning: ", path, " is being discarded for being too long")
+                discardCount += 1
+        examples.append([wavDataPoints, label])
+
+    print("Total filtered out of dataset: ", discardCount)
+    return examples
 
 def loadWavFilesWithLabels(directory, label):
     filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(directory) for f in fn]
@@ -33,15 +61,27 @@ def loadWavFilesWithLabels(directory, label):
     print("Total filtered out of dataset: ", discardCount)
     return examples
 
-# Gather all .wav files and create associated labels
-print("[*] Loading male healthy files")
-examples = loadWavFilesWithLabels(MALE_HEALTHY_DIR, HEALTHY_LABEL)
-print("[*] Loading male patient files")
-examples = examples + loadWavFilesWithLabels(MALE_PATIENT_DIR, PATIENT_LABEL)
-print("[*] Loading female healthy files")
-examples = examples + loadWavFilesWithLabels(FEMALE_HEALTHY_DIR, HEALTHY_LABEL)
-print("[*] Loading female patient files")
-examples = examples + loadWavFilesWithLabels(FEMALE_PATIENT_DIR, PATIENT_LABEL)
+
+if len(sys.argv) > 1 and sys.argv[1] == "--no-patches":
+    print("[*] Loading male healthy files")
+    examples = loadAndGroupWavFilesWithLabels(MALE_HEALTHY_DIR, HEALTHY_LABEL)
+    print("[*] Loading male patient files")
+    examples = examples + loadAndGroupWavFilesWithLabels(MALE_PATIENT_DIR, PATIENT_LABEL)
+    print("[*] Loading female healthy files")
+    examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_HEALTHY_DIR, HEALTHY_LABEL)
+    print("[*] Loading female patient files")
+    examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_PATIENT_DIR, PATIENT_LABEL)
+else:
+    # Gather all .wav files and create associated labels
+    print("[*] Loading male healthy files")
+    examples = loadWavFilesWithLabels(MALE_HEALTHY_DIR, HEALTHY_LABEL)
+    print("[*] Loading male patient files")
+    examples = examples + loadWavFilesWithLabels(MALE_PATIENT_DIR, PATIENT_LABEL)
+    print("[*] Loading female healthy files")
+    examples = examples + loadWavFilesWithLabels(FEMALE_HEALTHY_DIR, HEALTHY_LABEL)
+    print("[*] Loading female patient files")
+    examples = examples + loadWavFilesWithLabels(FEMALE_PATIENT_DIR, PATIENT_LABEL)
+
 
 # Shuffle the .wav, label pairs
 print("[*] Shuffling examples")
@@ -54,17 +94,23 @@ trainSet = examples[:half]
 validationSet = examples[half: half + quarter]
 testSet = examples[half + quarter:]
 
+
+if len(sys.argv) > 1 and sys.argv[1] == "--no-patches":
+    prefix = ""
+else:
+    prefix = "grouped_"
+
 # Save newly organized data structures to disk
 print("[*] Saving training set to disk")
-with open("train_set.pkl", "wb") as f:
+with open(prefix + "train_set.pkl", "wb") as f:
     pickle.dump(trainSet, f)
 
 print("[*] Saving validation set to disk")
-with open("validation_set.pkl", "wb") as f:
+with open(prefix + "validation_set.pkl", "wb") as f:
     pickle.dump(validationSet, f)
 
 print("[*] Saving test set to disk")
-with open("test_set.pkl", "wb") as f:
+with open(prefix + "test_set.pkl", "wb") as f:
     pickle.dump(testSet, f)
 
 print("*" * 20 + " Data Set Stats " + "*" * 20)
