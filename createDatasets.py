@@ -87,6 +87,7 @@ else:
 print("[*] Shuffling examples")
 random.shuffle(examples)
 
+
 # Divide into sets
 half = len(examples) // 2
 quarter = half // 2
@@ -96,29 +97,35 @@ testSet = examples[half + quarter:]
 
 
 if len(sys.argv) > 1 and sys.argv[1] == "--no-patches":
-    prefix = ""
+    print("[*] Saving grouped test set to disk")
+    
+    with open("grouped_train_set.pkl", "wb") as f:
+        pickle.dump(examples, f)
+
+    print("*" * 20 + " Data Set Stats " + "*" * 20)
+    print("Set      | Size")
+    print("=========+======")
+    print("Test    %s" % len(examples))
 else:
-    prefix = "grouped_"
+    # Save newly organized data structures to disk
+    print("[*] Saving training set to disk")
+    with open(prefix + "train_set.pkl", "wb") as f:
+        pickle.dump(trainSet, f)
 
-# Save newly organized data structures to disk
-print("[*] Saving training set to disk")
-with open(prefix + "train_set.pkl", "wb") as f:
-    pickle.dump(trainSet, f)
-
-print("[*] Saving validation set to disk")
-with open(prefix + "validation_set.pkl", "wb") as f:
-    pickle.dump(validationSet, f)
-
-print("[*] Saving test set to disk")
-with open(prefix + "test_set.pkl", "wb") as f:
-    pickle.dump(testSet, f)
-
-print("*" * 20 + " Data Set Stats " + "*" * 20)
-print("Set      | Size")
-print("=========+======")
-print("Train     " + str(len(trainSet)))
-print("Validate  " + str(len(validationSet)))
-print("Test      " + str(len(testSet)))
+    print("[*] Saving validation set to disk")
+    with open(prefix + "validation_set.pkl", "wb") as f:
+        pickle.dump(validationSet, f)
+            
+    print("[*] Saving test set to disk")
+    with open(prefix + "test_set.pkl", "wb") as f:
+        pickle.dump(testSet, f)
+                
+    print("*" * 20 + " Data Set Stats " + "*" * 20)
+    print("Set      | Size")
+    print("=========+======")
+    print("Train     " + str(len(trainSet)))
+    print("Validate  " + str(len(validationSet)))
+    print("Test      " + str(len(testSet)))
 
 """
 print()
