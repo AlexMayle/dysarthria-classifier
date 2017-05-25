@@ -1,3 +1,4 @@
+import os
 import time
 import tensorflow as tf
 import math
@@ -11,12 +12,35 @@ import preprocess
 SAMPLE_RATE = 44100
 MFCC_SIZE = 13
 CHECKPOINT_FILEPATH = "/tmp/model.ckpt"
+GROUPED_TESTSET_PATH = "grouped_test_set.pkl"
+MFCC_GRPED_TESTSET_PATH = "mfcc_grouped_test_set.pkl"
 
 ########### LSTM Network ##############
 class LSTMNet(object):
   def __init__(self, mode):
     self.mode = mode
- 
+
+  def read_grouped_data(self):
+    if os.path.isfile(MFCC_GRPED_TESTSET_PATH):
+      print("[*] Loading mfcc grouped test set from disk")
+      with open(MFCC_GRPED_TESTSET_PATH, "rb") as f:
+        testSet = pickle.load(f)
+    elif os.path.isfile(GROUPED_TESTSET_PATH):
+      print("[*] Converting grouped test set to mfcc's")
+      testSet = preprocess.loadDataSet(GROUPED_TESTSET_PATH)
+      testSet[0] = list(map(lambda x: list(map(lambda y: mfcc(y, samplerate= SAMPLE_RATE), x)),
+                       testSet[0]))
+      with open(MFCC_GRPED_TESTSET_PATH, "wb") as f:
+        pickle.dump(testSet, f)
+    else:
+      print("[*] Can't find grouped dataset, use createDataset.py --no_patches to create")
+      exit(-1)
+
+    # Normalize
+    ##testSet[0] = preprocess.meanAndVarNormalize(testSet[0])
+
+    return testSet[0], testSet[1]
+    
   # Read train, valid and test data.
   def read_data(self):
     """
@@ -74,7 +98,15 @@ class LSTMNet(object):
     relevant = tf.gather(flat, index)
     return relevant
 
-  def test(self, sess, pred_op, X, data, Y, labels, batch_size, is_train):
+  def groupEvaluate(self, sess, pred_op, X, Y, batch_size, is_train):
+    print("[*] Starting grouped evaluation")
+    groupedTestX, groupedTestY = self.read_grouped_data()
+    batch_size = 1
+    accuracy, precision, recall = self.test(sess, pred_op, X, groupedTestX, Y,
+                                            groupedTestY, batch_size, is_train, patches=False)
+    return accuracy, precision, recall
+  
+  def test(self, sess, pred_op, X, data, Y, labels, batch_size, is_train, patches=True):
     """
       sess:        Session to run pred_op in
       pred_op:     Op to get predictions from model
@@ -99,6 +131,8 @@ class LSTMNet(object):
     while s < numExamples:
       e = min(s + batch_size, numExamples)
       batch_x = data[s : e]
+      if not patches:
+        batch_x = batch_x[0]
       batch_x, _ = preprocess.padBatch(batch_x)
       batch_y = labels[s : e]
       predictions[s:e] = sess.run(pred_op, feed_dict={X: batch_x, Y: batch_y, is_train: False})
@@ -232,9 +266,9 @@ class LSTMNet(object):
       # and handle the metrics in numPy, but the accuracy
       # op will also get what you want within TensorFlow
       pred = tf.cast(tf.argmax(logits, axis= 1), "int32")
-      accuracy = tf.reduce_sum(tf.cast(tf.equal(pred, Y), "float"))
-
-
+      # Op for predicting based off all of a speakers' character
+      # pronunciations
+      groupPred = tf.round(tf.reduce_mean(tf.cast(pred, "float")))
       
       # Configure GPU use
       has_GPU = True
@@ -253,7 +287,7 @@ class LSTMNet(object):
         lstmWeights = [p for p in tf.trainable_variables() if "lstm_cell/weights" in p.name]
         # TODO: Make the stdDev of the initializer a hyperparameter (I already tuned it, tho)
         lstm_init = tf.Variable(tf.truncated_normal([hidden_size + 13, hidden_size * 4],
-                                                    stddev=0.5))
+                                                    stddev=0.25))
         lstmWeights[0].assign(lstm_init)
 
 
@@ -264,6 +298,14 @@ class LSTMNet(object):
         params = [p for p in params if
                   ("adam" not in p.name and (("weights" in p.name) or "bias" in p.name))]
         saver = tf.train.Saver(params)
+
+        if FLAGS.restore:
+          print("[*] Restoring weights, skipping training")
+          saver.restore(sess, CHECKPOINT_FILEPATH)
+          batch_size = 1
+          accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
+                                                           batch_size, is_train)
+          return accuracy, precision, recall
 
         maxMetric = 0
         momentumSteps = 0
@@ -304,9 +346,13 @@ class LSTMNet(object):
                   break
                 else:
                   momentumSteps += 1
-          
+
+        print("[*] weights saved at %s" % CHECKPOINT_FILEPATH)          
+        saver.save(sess, CHECKPOINT_FILEPATH)
             
-        # After all epochs, calculate accuracy, precision, and recall
-        accuracy, precision, recall = self.test(sess, pred, X, testX, Y, testY,
-                                                batch_size, is_train)
+        # After all epochs, calculate accuracy, precision, and recall on the grouped
+        # dataset
+        batch_size = 1
+        accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
+                                                         batch_size, is_train)
         return accuracy, precision, recall

@@ -1,22 +1,17 @@
-Usage:
+VERSION 2
+Alex Mayle
+5/17/17
 
-python main.py mode [options]
+To reproduce 100% accuracy result, run the following
 
-Mode is:
-1	Baseline
-2	LSTM-1
-3	LSTM-2
-4	Bi-LSTM-1
+	python main.py 2
 
-Read report.pdf in the archive for context on these models and
-check the preamble of main.py for options. (Some, like --expanded_data,
-don't actually do anything but decay, batch size, training epochs, etc... work)
+After this, the weights will be saved to the /tmp directory,
+after which you may reproduce the results without retraining
+using the following. 
 
-LSTM's are especially sensitive to initialization, so results may vary run to run.
-The traces in /out represent the best performance I achieved. 
+	python main.py 2 --restore 1
 
-out				-Traces of experiments
-train_lstm.py			-LSTM models
-train_baseline.py		-Baseline model
-preprocess.py			-Ad hoc preprocessing methods
-main.py				-interface
+DISCLAIMER:
+The new testing method is not implemented for the baseline yet. We'll see how
+that fairs. I haven't tested the other LSTM modes either as of this writing (5/17/17). 

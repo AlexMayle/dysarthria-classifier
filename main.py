@@ -25,6 +25,10 @@ parser.add_argument('--decay',
                     type=float,
                     default=0.008, 
                     help='Decay rate of l2 regularization.')
+parser.add_argument('--restore',
+                    type=int,
+                    default=0,
+                    help='Set to 1 to restore weights from previous session')
 parser.add_argument('--batch_size', 
                     type=int,
                     default=32, 
