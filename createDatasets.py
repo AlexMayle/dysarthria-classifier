@@ -1,9 +1,10 @@
 import os
-import numpy as np
 import pickle
-import scipy.io.wavfile as wav
 import random
+
+import scipy.io.wavfile as wav
 from python_speech_features import mfcc
+import numpy as np
 
 DATA_DIR = "data/"
 MALE_HEALTHY_DIR = DATA_DIR + "male healthy"
