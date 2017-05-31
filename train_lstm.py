@@ -37,7 +37,7 @@ class LSTMNet(object):
       exit(-1)
 
     # Normalize
-    ##testSet[0] = preprocess.meanAndVarNormalize(testSet[0])
+    testSet[0] = preprocess.meanAndVarNormalize(testSet[0])
 
     return testSet[0], testSet[1]
     
@@ -305,7 +305,7 @@ class LSTMNet(object):
           batch_size = 1
           accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
                                                            batch_size, is_train)
-          return accuracy, precision, recall
+          #return accuracy, precision, recall
 
         maxMetric = 0
         momentumSteps = 0
