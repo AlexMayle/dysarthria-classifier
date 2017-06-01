@@ -1,3 +1,4 @@
+from functools import reduce
 import numpy as np
 import pickle
 from python_speech_features import mfcc
@@ -59,8 +60,43 @@ def padBatch(mfccs):
     paddedMfccs = poolMfccs(mfccs, outputLength)
     return paddedMfccs, outputLength
 
+def nestedListMeanAndVarNormalize(dataset):
+    # Calculate averages
+    totals = np.zeros(MFCC_SIZE)
+    numPoints = 0
+    for example in dataset:
+        totals += reduce(lambda x,y: x+y, map(lambda z: np.sum(z, axis= 0), example))
+        numPoints += reduce(lambda x,y: x+y, map(lambda x: x.shape[0], example))
+        
+    # Mean Normalization
+    averages = totals / numPoints
+    distanceFromMean = np.zeros(MFCC_SIZE)
+    for example in dataset:
+        example = list(map(lambda x: x - averages, example))
+        distanceFromMean += reduce(lambda x,y: x+y,
+                                   map(lambda z: np.sum(np.square(z), axis= 0), example))
 
-def meanAndVarNormalize(dataset):
+    # Variance normalization
+    variances = distanceFromMean / numPoints
+    for example in dataset:
+            example = list(map(lambda x: x / variances, example))
+        
+    return dataset
+
+
+
+def meanAndVarNormalize(dataset, labels= False):
+    if labels:
+        print("--[|] Note: Normalizing with labels in dataset")
+        datasetWithoutLabels = [example[0] for example in dataset]
+        datasetWithoutLabels = nestedListMeanAndVarNormalize(datasetWithoutLabels)
+        return [[data, example[1]] for data, example in zip(datasetWithoutLabels, dataset)]
+    
+    # Check if argument is a nested list
+    if isinstance(dataset[0], list):
+        print("--[|] Note: Normalizing grouped dataset")
+        return nestedListMeanAndVarNormalize(dataset)
+    
     # Calculate averages
     totals = np.zeros(MFCC_SIZE)
     numPoints = 0

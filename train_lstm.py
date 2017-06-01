@@ -11,7 +11,7 @@ import preprocess
 
 SAMPLE_RATE = 44100
 MFCC_SIZE = 13
-CHECKPOINT_FILEPATH = "/tmp/model.ckpt"
+CHECKPOINT_FILEPATH = "out/model.ckpt"
 GROUPED_TESTSET_PATH = "grouped_test_set.pkl"
 MFCC_GRPED_TESTSET_PATH = "mfcc_grouped_test_set.pkl"
 
@@ -80,7 +80,7 @@ class LSTMNet(object):
   def generalizationLoss(self, maxMetric, currentMetric):
     minErr = 1 - maxMetric
     currentErr = 1 - currentMetric
-    return 100 * (currentErr / minErr - 1)
+    return currentErr / minErr - 1
   
   def getExampleLengths(self, sequence):
     used = tf.sign(tf.reduce_max(tf.abs(sequence), reduction_indices=2))
@@ -299,13 +299,14 @@ class LSTMNet(object):
                   ("adam" not in p.name and (("weights" in p.name) or "bias" in p.name))]
         saver = tf.train.Saver(params)
 
-        if FLAGS.restore:
+        if FLAGS.restore == 1:
           print("[*] Restoring weights, skipping training")
           saver.restore(sess, CHECKPOINT_FILEPATH)
-          batch_size = 1
-          accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
+          if FLAGS.restore == 2:
+            batch_size = 1
+            accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
                                                            batch_size, is_train)
-          #return accuracy, precision, recall
+            return accuracy, precision, recall
 
         maxMetric = 0
         momentumSteps = 0
@@ -325,12 +326,13 @@ class LSTMNet(object):
           end_time = time.time()
           print ('the training took: %d(s)' % (end_time - start_time))
 
-          accuracy, _, _ = self.test(sess, pred, X, testX, Y, testY, batch_size, is_train)
-          print(accuracy)
+          if i % 2 == 0:
+            accuracy, _, _ = self.test(sess, pred, X, testX, Y, testY, batch_size, is_train)
+            print(accuracy)
             
           # After epoch 5, start applying early stop regularization using recall as a metric
           # and a 5 step period to wait if the metric will rebound
-          if i >= 0:
+          if i >= 5:
             _, precision, recall = self.test(sess, pred, X, valX, Y, valY, batch_size, is_train)
             f_score = self.f_score(precision, recall)
             if f_score >= maxMetric:
@@ -339,7 +341,7 @@ class LSTMNet(object):
               saver.save(sess, CHECKPOINT_FILEPATH)
             else:
               GL = self.generalizationLoss(maxMetric, f_score)
-              if GL > 12.5:
+              if GL > .25:
                 if momentumSteps > 3:
                   print("Stopping Early. . .")
                   saver.restore(sess, CHECKPOINT_FILEPATH)

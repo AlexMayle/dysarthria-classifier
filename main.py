@@ -31,7 +31,7 @@ parser.add_argument('--restore',
                     help='Set to 1 to restore weights from previous session')
 parser.add_argument('--batch_size', 
                     type=int,
-                    default=32, 
+                    default=64, 
                     help='Batch size. Must divide evenly into the dataset sizes.')
 parser.add_argument('--input_data_dir', 
                     type=str, 

@@ -69,7 +69,6 @@ def splitIntoPatches(dataset):
         ungroupedExamples = list(map(lambda x: [x, examplesLabelPair[1]], examplesLabelPair[0]))
         patches += ungroupedExamples
 
-    #random.shuffle(patches)
     return patches
 
 def convertToMfccs(groupedExamples):
@@ -122,6 +121,11 @@ print("[*] creating ungrouped versioans of partitions")
 trainSet = splitIntoPatches(groupedTrainSet)
 valSet = splitIntoPatches(groupedValSet)
 testSet = splitIntoPatches(groupedTestSet)
+
+print("[*] Shuffling up speakers and pronunciations in ungrouped sets")
+random.shuffle(trainSet)
+random.shuffle(valSet)
+random.shuffle(testSet)
 
 # statistics
 numTrainSpeakers = len(groupedTrainSet)
