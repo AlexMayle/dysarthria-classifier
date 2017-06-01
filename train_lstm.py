@@ -135,7 +135,9 @@ class LSTMNet(object):
         batch_x = batch_x[0]
       batch_x, _ = preprocess.padBatch(batch_x)
       batch_y = labels[s : e]
-      predictions[s:e] = sess.run(pred_op, feed_dict={X: batch_x, Y: batch_y, is_train: False})
+      predictions[s:e] = sess.run(pred_op, feed_dict={X: batch_x,
+                                                      Y: batch_y,
+                                                      is_train: False})
       s = e
 
     accuracy = np.sum(predictions == labels) / numExamples
@@ -268,7 +270,10 @@ class LSTMNet(object):
       pred = tf.cast(tf.argmax(logits, axis= 1), "int32")
       # Op for predicting based off all of a speakers' character
       # pronunciations
-      groupPred = tf.round(tf.reduce_mean(tf.cast(pred, "float")))
+      predWeightsRaw = tf.reduce_max(logits, reduction_indices= 1)
+      predWeights = tf.nn.softmax(predWeightsRaw)
+      weightedPreds = tf.multiply(predWeights, tf.cast(pred, 'float'))
+      groupPred = tf.round(tf.reduce_sum(weightedPreds))
       
       # Configure GPU use
       has_GPU = True
@@ -299,7 +304,7 @@ class LSTMNet(object):
                   ("adam" not in p.name and (("weights" in p.name) or "bias" in p.name))]
         saver = tf.train.Saver(params)
 
-        if FLAGS.restore == 1:
+        if FLAGS.restore == 1 or 2:
           print("[*] Restoring weights, skipping training")
           saver.restore(sess, CHECKPOINT_FILEPATH)
           if FLAGS.restore == 2:
