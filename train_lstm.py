@@ -346,14 +346,14 @@ class LSTMNet(object):
               saver.save(sess, CHECKPOINT_FILEPATH)
             else:
               GL = self.generalizationLoss(maxMetric, f_score)
-              if GL > .25:
+              if GL > .175:
                 if momentumSteps > 3:
                   print("Stopping Early. . .")
                   saver.restore(sess, CHECKPOINT_FILEPATH)
                   break
                 else:
                   momentumSteps += 1
-
+          
         print("[*] weights saved at %s" % CHECKPOINT_FILEPATH)          
         saver.save(sess, CHECKPOINT_FILEPATH)
             

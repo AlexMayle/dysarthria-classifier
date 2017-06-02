@@ -108,9 +108,9 @@ print("[*] Partitioning into training, validation, and testing set")
 random.shuffle(examples)
 trainSplit = len(examples) // 2
 valSplit = trainSplit + int(.16 * len(examples))
-groupedTrainSet = examples[:50]
-groupedValSet = examples[50:51]
-groupedTestSet = examples[51:]
+groupedTrainSet = examples[:35]
+groupedValSet = examples[35:40]
+groupedTestSet = examples[40:]
 
 print("[*] Converting to MFCCs")
 groupedTrainSet = convertToMfccs(groupedTrainSet)
