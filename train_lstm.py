@@ -1,10 +1,9 @@
 import os
 import time
-import tensorflow as tf
-import math
 import pickle
 import numpy as np
 
+import tensorflow as tf
 from sklearn import metrics
 from python_speech_features import mfcc
 import preprocess
@@ -40,8 +39,8 @@ class LSTMNet(object):
     testSet[0] = preprocess.meanAndVarNormalize(testSet[0])
 
     return testSet[0], testSet[1]
-    
-  # Read train, valid and test data.
+
+  # Read train, valid jnd test data.
   def read_data(self):
     """
     Reads training and test set from disk in pickle format
@@ -76,12 +75,12 @@ class LSTMNet(object):
 
   def f_score(self, precision, recall):
     return 2 * precision * recall / (precision + recall)
-  
+
   def generalizationLoss(self, maxMetric, currentMetric):
     minErr = 1 - maxMetric
     currentErr = 1 - currentMetric
     return currentErr / minErr - 1
-  
+
   def getExampleLengths(self, sequence):
     used = tf.sign(tf.reduce_max(tf.abs(sequence), reduction_indices=2))
     lengths = tf.reduce_sum(used, reduction_indices=1)
@@ -98,46 +97,73 @@ class LSTMNet(object):
     relevant = tf.gather(flat, index)
     return relevant
 
-  def groupEvaluate(self, sess, pred_op, X, Y, batch_size, is_train):
-    print("[*] Starting grouped evaluation")
-    groupedTestX, groupedTestY = self.read_grouped_data()
-    batch_size = 1
-    accuracy, precision, recall = self.test(sess, pred_op, X, groupedTestX, Y,
-                                            groupedTestY, batch_size, is_train, patches=False)
-    return accuracy, precision, recall
-  
-  def test(self, sess, pred_op, X, data, Y, labels, batch_size, is_train, patches=True):
+  def patientLevelEvaluate(self, session, pred_op, data, labels):
     """
-      sess:        Session to run pred_op in
+      Evaluates the model per patient, rather than on a per syllable
+      level
+
+      session:     Session to run pred_op in
       pred_op:     Op to get predictions from model
-      X:           Placeholder to feed data into
-      data:        data to be feed into X placeholder
-      Y:           Placeholder to feed labels into
+      data:        data to be fed into X placeholder. Should be a list of
+                   of lists, where each inner list contains numpy arrays
+                   representing the patients' syllables where each row is
+                   an MFCC of the syllable
       labels:      labels to be placed into Y
-      batch_size:  Batch size to use when interating through data
-      is_train:    Placeholder to designate if its training or testing time
 
       Returns:
         Accuracy, precision, and recall of the model as measured by
         the models predictions and ground truth labels
     """
-    
+ 
+    feed_dict = dict()
+    feed_dict[self.is_train] = False
+    num_examples = len(data)
+    predictions = np.zeros([num_examples])
+
+    print("[*] Starting grouped evaluation")
+    for i in range(num_examples):
+        batch_x, _ = preprocess.padBatch(data[i])
+        feed_dict[self.X_placeholder] = batch_x
+        feed_dict[self.Y_placeholder] = [labels[i]]
+        predictions[i] = session.run(pred_op, feed_dict=feed_dict)
+
+    accuracy = np.sum(predictions == labels) / num_examples
+    precision = metrics.precision_score(labels, predictions)
+    recall = metrics.recall_score(labels, predictions)
+
+    return accuracy, precision, recall
+
+  def syllableLevelEvaluate(self, session, pred_op, data, labels):
+    """
+      Evaluates the model per syllable, rather than on a per patient
+      level
+
+      session:     Session to run pred_op in
+      pred_op:     Op to get predictions from model
+      data:        data to be fed into X placeholder. Should be a list of
+                   of numpy arrays where each row is an MFCC of the syllable
+      labels:      labels to be placed into Y
+
+      Returns:
+        Accuracy, precision, and recall of the model as measured by
+        the models predictions and ground truth labels
+    """
+
+    feed_dict = {}
+    feed_dict[self.is_train] = False
     numExamples = len(data)
-    accuracy = 0.0
-    precision = 0.0
-    recall = 0.0
     predictions = np.zeros([numExamples])
+    batch_size = 32                       # doesn't really matter in testing phase
+
     s = 0
     while s < numExamples:
       e = min(s + batch_size, numExamples)
       batch_x = data[s : e]
-      if not patches:
-        batch_x = batch_x[0]
       batch_x, _ = preprocess.padBatch(batch_x)
       batch_y = labels[s : e]
-      predictions[s:e] = sess.run(pred_op, feed_dict={X: batch_x,
-                                                      Y: batch_y,
-                                                      is_train: False})
+      predictions[s:e] = session.run(pred_op, feed_dict={self.X_placeholder: batch_x,
+                                                      self.Y_placeholder: batch_y,
+                                                      self.is_train: False})
       s = e
 
     accuracy = np.sum(predictions == labels) / numExamples
@@ -145,7 +171,7 @@ class LSTMNet(object):
     recall = metrics.recall_score(labels, predictions)
 
     return accuracy, precision, recall
-  
+
   def model_1(self, X, hidden_size, is_train):
     # ======================================================================
     # Single Layer LSTM over full example sequence with L2 reg
@@ -207,7 +233,7 @@ class LSTMNet(object):
     lastOutputs = tf.concat([lastForwardOutputs, lastBackwardOutputs], axis= 1)
     return lastOutputs
 
-  
+
   # Entry point for training and evaluation.
   def train_and_evaluate(self, FLAGS):
     class_num     = 2
@@ -224,25 +250,25 @@ class LSTMNet(object):
     print("[*] Preprocessing done")
 
     # Construct computation graph
-    with tf.Graph().as_default():      
+    with tf.Graph().as_default():
       # Placeholders
-      X = tf.placeholder(tf.float32, [None, None, 13])
-      Y = tf.placeholder(tf.int32, [None])
-      is_train = tf.placeholder(tf.bool)
+      self.X_placeholder = tf.placeholder(tf.float32, [None, None, 13])
+      self.Y_placeholder = tf.placeholder(tf.int32, [None])
+      self.is_train = tf.placeholder(tf.bool)
 
       # Choose RNN Model
       if self.mode == 1: # 1-Layer LSTM
-        features = self.model_1(X, hidden_size, is_train)
+        features = self.model_1(self.X_placeholder, hidden_size, self.is_train)
       if self.mode == 2: # 2-Layer LSTM
-        features = self.model_2(X, hidden_size)
+        features = self.model_2(self.X_placeholder, hidden_size)
       if self.mode == 3: # 1-Layer Bidirectional LSTM
-        features = self.model_3(X, hidden_size)
+        features = self.model_3(self.X_placeholder, hidden_size)
         # We need to double the hidden_size now, as we
         # are concatenating the lstm output from the forward
         # and backward pass and sending it to our softmax
         # layer
         softmax_hidden_size = hidden_size * 2
-        
+
       # Define softmax layer, use the features.
       softmax_W1 = tf.Variable(tf.random_uniform([softmax_hidden_size, class_num]),
                                name= "softmax-weights")
@@ -255,12 +281,14 @@ class LSTMNet(object):
       if self.mode == 3:
         decay /= 2
       regulizer = tf.contrib.layers.l2_regularizer(decay)
-      loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
-                                                                           labels=Y))
+      loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
+                                                            labels=self.Y_placeholder)
+      loss = tf.reduce_mean(loss)
+
       # Only apply l2 reg to the single-layer LSTM architectures because we can't do dropout
       if self.mode == 1 or 3:
         loss = loss + tf.contrib.layers.apply_regularization(regulizer, weights)
-      
+
       # Optimizer
       train_op = tf.train.AdamOptimizer().minimize(loss)
 
@@ -274,7 +302,7 @@ class LSTMNet(object):
       predWeights = tf.nn.softmax(predWeightsRaw)
       weightedPreds = tf.multiply(predWeights, tf.cast(pred, 'float'))
       groupPred = tf.round(tf.reduce_sum(weightedPreds))
-      
+
       # Configure GPU use
       has_GPU = True
       if has_GPU:
@@ -308,9 +336,8 @@ class LSTMNet(object):
           print("[*] Restoring weights, skipping training")
           saver.restore(sess, CHECKPOINT_FILEPATH)
           if FLAGS.restore == 2:
-            batch_size = 1
-            accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
-                                                           batch_size, is_train)
+            data, labels = self.read_grouped_data()
+            accuracy, precision, recall = self.patientLevelEvaluate(sess, groupPred, data, labels)
             return accuracy, precision, recall
 
         maxMetric = 0
@@ -325,20 +352,22 @@ class LSTMNet(object):
             batch_x = trainX[s : e]
             batch_x, outputLength = preprocess.padBatch(batch_x)
             batch_y = trainY[s : e]
-            sess.run(train_op, feed_dict={X: batch_x, Y: batch_y, is_train: True})
+            sess.run(train_op, feed_dict={self.X_placeholder: batch_x,
+                                           self.Y_placeholder: batch_y,
+                                           self.is_train: True})
             s = e
-            
+
           end_time = time.time()
           print ('the training took: %d(s)' % (end_time - start_time))
 
           if i % 2 == 0:
-            accuracy, _, _ = self.test(sess, pred, X, testX, Y, testY, batch_size, is_train)
+            accuracy, _, _ = self.syllableLevelEvaluate(sess, pred, testX, testY)
             print(accuracy)
-            
+
           # After epoch 5, start applying early stop regularization using recall as a metric
           # and a 5 step period to wait if the metric will rebound
           if i >= 5:
-            _, precision, recall = self.test(sess, pred, X, valX, Y, valY, batch_size, is_train)
+            _, precision, recall = self.syllableLevelEvaluate(sess, pred, valX, valY)
             f_score = self.f_score(precision, recall)
             if f_score >= maxMetric:
               maxMetric = f_score
@@ -353,13 +382,12 @@ class LSTMNet(object):
                   break
                 else:
                   momentumSteps += 1
-          
-        print("[*] weights saved at %s" % CHECKPOINT_FILEPATH)          
+
+        print("[*] weights saved at %s" % CHECKPOINT_FILEPATH)
         saver.save(sess, CHECKPOINT_FILEPATH)
-            
+
         # After all epochs, calculate accuracy, precision, and recall on the grouped
         # dataset
-        batch_size = 1
-        accuracy, precision, recall = self.groupEvaluate(sess, groupPred, X, Y,
-                                                         batch_size, is_train)
+        data, labels = self.read_grouped_data()
+        accuracy, precision, recall = self.patientLevelEvaluate(sess, groupPred, data, labels)
         return accuracy, precision, recall
