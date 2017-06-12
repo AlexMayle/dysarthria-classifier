@@ -332,7 +332,7 @@ class LSTMNet(object):
                   ("adam" not in p.name and (("weights" in p.name) or "bias" in p.name))]
         saver = tf.train.Saver(params)
 
-        if FLAGS.restore == 1 or 2:
+        if FLAGS.restore == 1 or FLAGS.restore == 2:
           print("[*] Restoring weights, skipping training")
           saver.restore(sess, CHECKPOINT_FILEPATH)
           if FLAGS.restore == 2:
