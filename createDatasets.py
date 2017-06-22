@@ -1,10 +1,10 @@
+import sys
 import os
 import pickle
 import random
 
 import scipy.io.wavfile as wav
 from python_speech_features import mfcc
-import numpy as np
 
 DATA_DIR = "data/"
 MALE_HEALTHY_DIR = DATA_DIR + "male healthy"
@@ -93,72 +93,79 @@ def splitDataAndLabels(dataset):
        labels.append(dataLabelPair[1])
    return [data, labels]
 
+if __name__ == '__main__':
+    ############# Start of Script ##################################################
+    print("[*] Loading male healthy files")
+    examples = loadAndGroupWavFilesWithLabels(MALE_HEALTHY_DIR, HEALTHY_LABEL)
+    print("[*] Loading male patient files")
+    examples = examples + loadAndGroupWavFilesWithLabels(MALE_PATIENT_DIR, PATIENT_LABEL)
+    print("[*] Loading female healthy files")
+    examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_HEALTHY_DIR, HEALTHY_LABEL)
+    print("[*] Loading female patient files")
+    examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_PATIENT_DIR, PATIENT_LABEL)
 
-############# Start of Script ##################################################
-print("[*] Loading male healthy files")
-examples = loadAndGroupWavFilesWithLabels(MALE_HEALTHY_DIR, HEALTHY_LABEL)
-print("[*] Loading male patient files")
-examples = examples + loadAndGroupWavFilesWithLabels(MALE_PATIENT_DIR, PATIENT_LABEL)
-print("[*] Loading female healthy files")
-examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_HEALTHY_DIR, HEALTHY_LABEL)
-print("[*] Loading female patient files")
-examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_PATIENT_DIR, PATIENT_LABEL)
+    print("[*] Partitioning into training, validation, and testing set")
+    random.shuffle(examples)
 
-print("[*] Partitioning into training, validation, and testing set")
-random.shuffle(examples)
-trainSplit = len(examples) // 2
-valSplit = trainSplit + int(.16 * len(examples))
-groupedTrainSet = examples[:35]
-groupedValSet = examples[35:40]
-groupedTestSet = examples[40:]
+    if sys.argv[1] == '--no-partition':
+        mfcc_full_set = convertToMfccs(examples)
+        with open('mfcc_full_set.pkl', 'wb') as dataset_file:
+            pickle.dump(mfcc_full_set, dataset_file)
 
-print("[*] Converting to MFCCs")
-groupedTrainSet = convertToMfccs(groupedTrainSet)
-groupedValSet = convertToMfccs(groupedValSet)
-groupedTestSet = convertToMfccs(groupedTestSet)
+    trainSplit = len(examples) // 2
+    valSplit = trainSplit + int(.16 * len(examples))
+    groupedTrainSet = examples[:35]
+    groupedValSet = examples[35:40]
+    groupedTestSet = examples[40:]
 
-print("[*] creating ungrouped versioans of partitions")
-trainSet = splitIntoPatches(groupedTrainSet)
-valSet = splitIntoPatches(groupedValSet)
-testSet = splitIntoPatches(groupedTestSet)
+    print("[*] Converting to MFCCs")
+    groupedTrainSet = convertToMfccs(groupedTrainSet)
+    groupedValSet = convertToMfccs(groupedValSet)
+    groupedTestSet = convertToMfccs(groupedTestSet)
 
-print("[*] Shuffling up speakers and pronunciations in ungrouped sets")
-random.shuffle(trainSet)
-random.shuffle(valSet)
-random.shuffle(testSet)
+    print("[*] creating ungrouped versioans of partitions")
+    trainSet = splitIntoPatches(groupedTrainSet)
+    valSet = splitIntoPatches(groupedValSet)
+    testSet = splitIntoPatches(groupedTestSet) #This is mainly for debugging purposes so we can see
+                                               #how the model is learning
 
-# statistics
-numTrainSpeakers = len(groupedTrainSet)
-numValSpeakers = len(groupedValSet)
-numTestSpeakers = len(groupedTestSet)
-numTrainExamples = len(trainSet)
-numValExamples = len(valSet)
-numTestExamples = len(testSet)
-# Don't need these now
-groupedTrainSet = groupedValSet = None
+    print("[*] Shuffling up speakers and pronunciations in ungrouped sets")
+    random.shuffle(trainSet)
+    random.shuffle(valSet)
+    random.shuffle(testSet)
 
-# Split the data and labels into their own lists
-trainSet = splitDataAndLabels(trainSet)
-valSet = splitDataAndLabels(valSet)
-testSet = splitDataAndLabels(testSet)
-groupedTestSet = splitDataAndLabels(groupedTestSet)
+    # statistics
+    numTrainSpeakers = len(groupedTrainSet)
+    numValSpeakers = len(groupedValSet)
+    numTestSpeakers = len(groupedTestSet)
+    numTrainExamples = len(trainSet)
+    numValExamples = len(valSet)
+    numTestExamples = len(testSet)
+    # Don't need these now
+    groupedTrainSet = groupedValSet = None
 
-print("[*] Saving train set to disk")
-with open("mfcc_train_set.pkl", "wb") as f:
-    pickle.dump(trainSet, f)
-print("[*] Saving validation set to disk")
-with open("mfcc_val_set.pkl", "wb") as f:
-    pickle.dump(valSet, f)
-print("[*] Saving grouped test set to disk")
-with open("mfcc_grouped_test_set.pkl", "wb") as f:
-    pickle.dump(groupedTestSet, f)
-print("[*] Saving test set to disk")
-with open("mfcc_test_set.pkl", "wb") as f:
-    pickle.dump(testSet, f)
+    # Split the data and labels into their own lists
+    trainSet = splitDataAndLabels(trainSet)
+    valSet = splitDataAndLabels(valSet)
+    testSet = splitDataAndLabels(testSet)
+    groupedTestSet = splitDataAndLabels(groupedTestSet)
 
-print("*" * 15 + " Data Set Stats " + "*" * 15)
-print("Set          | Speakers  | Examples  ")
-print("-------------+-----------+-----------")
-print("Train          %s          %s        " % (numTrainSpeakers, numTrainExamples))
-print("Val            %s          %s        " % (numValSpeakers, numValExamples))
-print("Test           %s          %s        " % (numTestSpeakers, numTestExamples))
+    print("[*] Saving train set to disk")
+    with open("mfcc_train_set.pkl", "wb") as f:
+        pickle.dump(trainSet, f)
+    print("[*] Saving validation set to disk")
+    with open("mfcc_val_set.pkl", "wb") as f:
+        pickle.dump(valSet, f)
+    print("[*] Saving grouped test set to disk")
+    with open("mfcc_grouped_test_set.pkl", "wb") as f:
+        pickle.dump(groupedTestSet, f)
+    print("[*] Saving test set to disk")
+    with open("mfcc_test_set.pkl", "wb") as f:
+        pickle.dump(testSet, f)
+
+    print("*" * 15 + " Data Set Stats " + "*" * 15)
+    print("Set          | Speakers  | Examples  ")
+    print("-------------+-----------+-----------")
+    print("Train          %s          %s        " % (numTrainSpeakers, numTrainExamples))
+    print("Val            %s          %s        " % (numValSpeakers, numValExamples))
+    print("Test           %s          %s        " % (numTestSpeakers, numTestExamples))
