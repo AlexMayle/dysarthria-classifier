@@ -63,7 +63,7 @@ def splitIntoPatches(dataset):
     return:   A dataset with a one-to-one relationship between examples and labels,
               which may or may not be shuffled depending on the shuffle argument
     """
-    
+
     patches = []
     for examplesLabelPair in dataset:
         ungroupedExamples = list(map(lambda x: [x, examplesLabelPair[1]], examplesLabelPair[0]))
@@ -88,7 +88,6 @@ def splitDataAndLabels(dataset):
    data = []
    labels = []
    for dataLabelPair in dataset:
-       print(dataLabelPair[1])
        data.append(dataLabelPair[0])
        labels.append(dataLabelPair[1])
    return [data, labels]
@@ -107,10 +106,12 @@ if __name__ == '__main__':
     print("[*] Partitioning into training, validation, and testing set")
     random.shuffle(examples)
 
-    if sys.argv[1] == '--no-partition':
+    if len(sys.argv) > 1 and sys.argv[1] == '--no-partition':
+        print('[*] Skipping partitioning, saving full mfcc dataset to disk')
         mfcc_full_set = convertToMfccs(examples)
         with open('mfcc_full_set.pkl', 'wb') as dataset_file:
             pickle.dump(mfcc_full_set, dataset_file)
+        exit(1)
 
     trainSplit = len(examples) // 2
     valSplit = trainSplit + int(.16 * len(examples))
