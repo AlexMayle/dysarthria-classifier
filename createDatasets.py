@@ -6,6 +6,8 @@ import random
 import scipy.io.wavfile as wav
 from python_speech_features import mfcc
 
+MALE = "male"
+FEMALE = "female"
 DATA_DIR = "data/"
 MALE_HEALTHY_DIR = DATA_DIR + "male healthy"
 MALE_PATIENT_DIR = DATA_DIR + "male patient"
@@ -14,42 +16,72 @@ FEMALE_PATIENT_DIR = DATA_DIR + "female patient"
 HEALTHY_LABEL = 0
 PATIENT_LABEL = 1
 SAMPLE_RATE = 44100
+MAX_LENGTH = 5  # seconds
+WAV_EXTENSION = ".wav"
+LENGTH_ERROR_MSG =  "Warning: %s is being discarded due to being too long"
 
-def loadAndGroupWavFilesWithLabels(directory, label):
+def  parse_speaker(speaker_dir):
+    speaker_dir = speaker_dir.split('-')
+    speaker = speaker_dir[1]
+    notes = speaker_dir[2:]
+    return speaker, notes
+
+
+def parse_syllable(syllable_filename):
+    syllable = syllable_filename.rstrip(WAV_EXTENSION)
+    return syllable
+
+
+def create_annotated_dataset(data_path, label, spkr_gender):
     """
     Loads all wav files associated with each speaker,
     groups them, and associates a label
 
     Automatically filters out files that aren't wav files and those that are
     too long to be single mandarin characters
-    
+
     Returns: A list of lists of the form [[[wavFiles], label], ...]
     """
-    # get directories containing speakers' mandarin character pronunciations
-    speakerDirNames = [os.path.join(directory, dirName) for dirName in os.listdir(directory)
-                                                            if dirName[0] != '.']
     examples = []
-    discardCount = 0
-    for dirName in speakerDirNames:
-        # get file names and filter out the ones that aren't wav files
-        filenames = [os.path.join(dp, f) for dp, _, fn in os.walk(dirName) for f in fn]
-        wavFilenames = [filename for filename in filenames if filename[-4:] == ".wav"]
-        
-        wavDataPoints = []
-        for path in wavFilenames:
-            _, wavData = wav.read(path)
+    speaker_directories = filter(lambda x: not x.startswith('.'), os.listdir(data_path))
+    for spkr_directory in speaker_directories:
+        spkr_name, spkr_notes = parse_speaker(spkr_directory)
+        spkr_path = os.path.join(data_path, spkr_directory)
 
-            # filter out wav files that are too long to be single character pronunciations
-            if len(wavData) / 44100 < 5:
-                wavDataPoints.append(wavData)
+        wav_files = filter(lambda x: x.endswith(WAV_EXTENSION), os.listdir(spkr_path))
+        spkr_datapoints = []
+        for wav_filename in wav_files:
+            _, data = wav.read(os.path.join(spkr_path, wav_filename))
+            if len(data) / SAMPLE_RATE < MAX_LENGTH:
+                data = mfcc(data, SAMPLE_RATE)
+                spkr_datapoints.append((data, parse_syllable(wav_filename)))
             else:
-                print("Warning: ", path, " is being discarded for being too long")
-                discardCount += 1
+                print(LENGTH_ERROR_MSG % wav_filename)
 
-        examples.append([wavDataPoints, label])
+        random.shuffle(spkr_datapoints)
+        spkr_datapoints, syllable_annotations = zip(*spkr_datapoints)
+        annotation = (spkr_name, spkr_gender, syllable_annotations, spkr_notes)
+        examples.append((spkr_datapoints, label, annotation))
 
-    print("Total filtered out of dataset: ", discardCount)
     return examples
+
+
+def run():
+    print("[*] Loading male healthy files")
+    dataset = create_annotated_dataset(MALE_HEALTHY_DIR, HEALTHY_LABEL, MALE)
+    print("[*] Loading male patient files")
+    dataset = dataset + create_annotated_dataset(MALE_PATIENT_DIR, PATIENT_LABEL, MALE)
+    print("[*] Loading female healthy files")
+    dataset = dataset + create_annotated_dataset(FEMALE_HEALTHY_DIR, HEALTHY_LABEL, FEMALE)
+    print("[*] Loading female patient files")
+    dataset = dataset + create_annotated_dataset(FEMALE_PATIENT_DIR, PATIENT_LABEL, FEMALE)
+
+    print("[*] Shuffling speakers")
+    random.shuffle(dataset)
+
+    assert len(dataset) == 69
+    return dataset
+
 
 def splitIntoPatches(dataset):
     """
@@ -92,81 +124,16 @@ def splitDataAndLabels(dataset):
        labels.append(dataLabelPair[1])
    return [data, labels]
 
+
 if __name__ == '__main__':
-    ############# Start of Script ##################################################
-    print("[*] Loading male healthy files")
-    examples = loadAndGroupWavFilesWithLabels(MALE_HEALTHY_DIR, HEALTHY_LABEL)
-    print("[*] Loading male patient files")
-    examples = examples + loadAndGroupWavFilesWithLabels(MALE_PATIENT_DIR, PATIENT_LABEL)
-    print("[*] Loading female healthy files")
-    examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_HEALTHY_DIR, HEALTHY_LABEL)
-    print("[*] Loading female patient files")
-    examples = examples + loadAndGroupWavFilesWithLabels(FEMALE_PATIENT_DIR, PATIENT_LABEL)
+    try:
+        SAVE_PATH = sys.argv[1]
+    except IndexError:
+        print("Please provide output file name of dataset")
+        exit(-1)
 
-    print("[*] Partitioning into training, validation, and testing set")
-    random.shuffle(examples)
+    dataset = run()
 
-    if len(sys.argv) > 1 and sys.argv[1] == '--no-partition':
-        print('[*] Skipping partitioning, saving full mfcc dataset to disk')
-        mfcc_full_set = convertToMfccs(examples)
-        with open('mfcc_full_set.pkl', 'wb') as dataset_file:
-            pickle.dump(mfcc_full_set, dataset_file)
-        exit(1)
-
-    trainSplit = len(examples) // 2
-    valSplit = trainSplit + int(.16 * len(examples))
-    groupedTrainSet = examples[:35]
-    groupedValSet = examples[35:40]
-    groupedTestSet = examples[40:]
-
-    print("[*] Converting to MFCCs")
-    groupedTrainSet = convertToMfccs(groupedTrainSet)
-    groupedValSet = convertToMfccs(groupedValSet)
-    groupedTestSet = convertToMfccs(groupedTestSet)
-
-    print("[*] creating ungrouped versioans of partitions")
-    trainSet = splitIntoPatches(groupedTrainSet)
-    valSet = splitIntoPatches(groupedValSet)
-    testSet = splitIntoPatches(groupedTestSet) #This is mainly for debugging purposes so we can see
-                                               #how the model is learning
-
-    print("[*] Shuffling up speakers and pronunciations in ungrouped sets")
-    random.shuffle(trainSet)
-    random.shuffle(valSet)
-    random.shuffle(testSet)
-
-    # statistics
-    numTrainSpeakers = len(groupedTrainSet)
-    numValSpeakers = len(groupedValSet)
-    numTestSpeakers = len(groupedTestSet)
-    numTrainExamples = len(trainSet)
-    numValExamples = len(valSet)
-    numTestExamples = len(testSet)
-    # Don't need these now
-    groupedTrainSet = groupedValSet = None
-
-    # Split the data and labels into their own lists
-    trainSet = splitDataAndLabels(trainSet)
-    valSet = splitDataAndLabels(valSet)
-    testSet = splitDataAndLabels(testSet)
-    groupedTestSet = splitDataAndLabels(groupedTestSet)
-
-    print("[*] Saving train set to disk")
-    with open("mfcc_train_set.pkl", "wb") as f:
-        pickle.dump(trainSet, f)
-    print("[*] Saving validation set to disk")
-    with open("mfcc_val_set.pkl", "wb") as f:
-        pickle.dump(valSet, f)
-    print("[*] Saving grouped test set to disk")
-    with open("mfcc_grouped_test_set.pkl", "wb") as f:
-        pickle.dump(groupedTestSet, f)
-    print("[*] Saving test set to disk")
-    with open("mfcc_test_set.pkl", "wb") as f:
-        pickle.dump(testSet, f)
-
-    print("*" * 15 + " Data Set Stats " + "*" * 15)
-    print("Set          | Speakers  | Examples  ")
-    print("-------------+-----------+-----------")
-    print("Train          %s          %s        " % (numTrainSpeakers, numTrainExamples))
-    print("Val            %s          %s        " % (numValSpeakers, numValExamples))
-    print("Test           %s          %s        " % (numTestSpeakers, numTestExamples))
+    print("[*] Saving grouped test set to disk %s" % SAVE_PATH)
+    with open(SAVE_PATH + ".pkl", "wb") as f:
+        pickle.dump(dataset, f)
