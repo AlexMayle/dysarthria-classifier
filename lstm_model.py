@@ -1,13 +1,14 @@
 import time
-from functools import wraps
 
-from sklearn import metrics
 import numpy as np
 import tensorflow as tf
+from sklearn import metrics
 import preprocess
 from createDatasets import splitIntoPatches, splitDataAndLabels
 
-_CHECKPOINT_PATH = "./model_parameters"
+_CHECKPOINT_PREFIX = "./out/params"
+_RESULT_PREFIX = "./out/results"
+
 
 class LstmNet(object):
 
@@ -16,9 +17,8 @@ class LstmNet(object):
     def __init__(self, mode=1,
                  input_size=13,
                  lstm_state_size=200,
-                 softmax_hidden_size=200,
                  num_classes=2,
-                 decay=0.008,
+                 decay=0.0,
                  learning_rate=.001):
         """TODO: to be defined1.
 
@@ -33,13 +33,13 @@ class LstmNet(object):
         self.dropout_ph = tf.placeholder(tf.float32)
 
         # Exposed ops
-        self.inference_op = self._inference(lstm_state_size, softmax_hidden_size, num_classes)
+        self.inference_op = self._inference(lstm_state_size, num_classes)
         self.loss_op = self._loss(decay)
         self.optimize_op = self._optimize(learning_rate)
-        self.predict_syllable_op = self._predict_syllable()
-        self.predict_patient_op = self._predict_patient()
+        self.raw_prob, self.predict_syllable_op = self._predict_syllable()
+        self.predict_patient_op, self.predict_patient_nor_op = self._predict_patient()
 
-    def k_fold_cross_validation(self, dataset, folds=10):
+    def k_fold_cross_validation(self, dataset, val_dataset=None, folds=10, num_epochs=None):
         """TODO: Docstring for k_fold_cross_validation.
 
         :data: TODO
@@ -50,33 +50,58 @@ class LstmNet(object):
         :returns: TODO
 
         """
+
+        val_set = splitIntoPatches(val_dataset)
+        val_set = splitDataAndLabels(val_set)
+        val_x, val_y = val_set
+
+        dataset = preprocess.meanAndVarNormalize(dataset, labels=True)
+
         examples_per_fold = len(dataset) // folds
         fold_datasets = []
         # Create folds
         for i in range(folds):
             index = i*examples_per_fold
             end_index = index + examples_per_fold
-            train_set = dataset[:index] + dataset[:end_index]
+
+            train_set = dataset[:index] + dataset[end_index:]
             train_set = splitIntoPatches(train_set)
             train_set = splitDataAndLabels(train_set)
             test_set = dataset[index:end_index]
-            test_set = splitDataAndLabels(test_set)
-            fold_dataset = (train_set, test_set)
+            syl_test_set = splitIntoPatches(test_set)
+            syl_test_set = splitDataAndLabels(syl_test_set)
+            pat_test_set = splitDataAndLabels(test_set)
+            fold_dataset = (train_set, syl_test_set, pat_test_set)
             fold_datasets.append(fold_dataset)
 
-        for train_set, test_set in fold_datasets:
+        sm_preds = np.array([], dtype=np.int32)
+        fo_preds = np.array([], dtype=np.int32)
+        syl_preds = []
+        for train_set, syl_test_set, pat_test_set in fold_datasets:
             train_x, train_y = train_set
-            sess = self.train(train_x, train_y)
-            test_x, test_y = test_set
-            stats, sess = self.patient_level_evaluate(test_x, test_y, session=sess)
-            print('%s, %s, %s' % stats)
-            sess.close()
+            if num_epochs is None:
+                sess, _ = self.train(train_x, train_y, val_data=val_x, val_targets=val_y)
+            else:
+                sess, _ = self.train(train_x, train_y, val_data=val_x, val_targets=val_y,
+                                     num_epochs=num_epochs)
+            syl_test_x, syl_test_y = syl_test_set
+            pat_test_x, pat_test_y = pat_test_set
+            with sess:
+                syl_pred = self.syllable_level_evaluate(syl_test_x, syl_test_y,
+                                                        probability=True)
+                sm_pred, fo_pred = self.patient_level_evaluate(pat_test_x, pat_test_y)
+            syl_preds.append(syl_pred)
+            sm_preds = np.concatenate((sm_preds, sm_pred))
+            fo_preds = np.concatenate((fo_preds, fo_pred))
+
+        return syl_preds, sm_preds, fo_preds
 
 
     def train(self, data, target,
               num_epochs=40,
-              batch_size=64,
-              restore_parameters=False,
+              batch_size=60,
+              early_stop_criteria=0.05,
+              parameter_path=None,
               val_data=None,
               val_targets=None,
               test_data=None,
@@ -89,7 +114,7 @@ class LstmNet(object):
         :returns: TODO
 
         """
-        gpu_option = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
+        gpu_option = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
         config = tf.ConfigProto(gpu_options=gpu_option)
         session = tf.Session(config=config)
         with session.as_default() as session:
@@ -99,8 +124,8 @@ class LstmNet(object):
             params = [p for p in params if
                       ("adam" not in p.name and (("weights" in p.name) or "bias" in p.name))]
             saver = tf.train.Saver(params)
-            if restore_parameters:
-                saver.restore(session, _CHECKPOINT_PATH)
+            if not parameter_path is None:
+                saver.restore(session, parameter_path)
 
             feed_dict = dict()
             feed_dict[self.dropout_ph] = 0.5
@@ -123,34 +148,41 @@ class LstmNet(object):
 
                 # Show training progress on test set
                 if not (test_data is None or test_targets is None):
-                    stats, _ = self.syllable_level_evaluate(test_data, test_targets)
-                    print('accuracy: %s' % stats[0])
+                    self.syllable_level_evaluate(test_data, test_targets)
 
                 # early stopping
                 if not (val_data is None or val_targets is None):
-                    stats, _ = self.syllable_level_evaluate(val_data, val_targets)
-                    f1_score = self._f1_score(stats[1], stats[2])
+                    val_predictions = self.syllable_level_evaluate(val_data, val_targets)
+                    val_prec = metrics.precision_score(val_predictions, val_targets)
+                    val_recall = metrics.recall_score(val_predictions, val_targets)
+                    f1_score = self._f1_score(val_prec, val_recall)
+                    print("Validation f1 score: %s" % f1_score)
                     if f1_score >= max_validation_score:
                         max_validation_score = f1_score
                         momentum_steps = 0
-                        saver.save(session, _CHECKPOINT_PATH)
+                        saver.save(session, _CHECKPOINT_PREFIX)
                     else:
                         GL = self._generalization_loss(max_validation_score, f1_score)
-                        print(GL)
-                        if GL > .175:
+                        if GL > early_stop_criteria:
                             if momentum_steps > 3:
                                 print("Stopping Early. . .")
-                                saver.restore(session, _CHECKPOINT_PATH)
+                                saver.restore(session, _CHECKPOINT_PREFIX)
                                 break
                             else:
                                 momentum_steps += 1
 
-            print("[*] weights saved at %s" % _CHECKPOINT_PATH)
-            saver.save(session, _CHECKPOINT_PATH)
+            # Save parameters
+            file_suffix = time.strftime('%H:%M:%S', time.gmtime())
+            param_save_path = _CHECKPOINT_PREFIX + '-' + file_suffix
+            saver.save(session, param_save_path)
+            print("[*] parameters saved at %s" % param_save_path)
 
-        return session
+        return session, param_save_path
 
-    def patient_level_evaluate(self, data, labels, session=None):
+    def patient_level_evaluate(self, data,
+                               labels,
+                               session=None,
+                               to_disk=False):
         """Evaluates the model per patient, rather than on a per syllable
         level
 
@@ -168,7 +200,8 @@ class LstmNet(object):
         feed_dict = dict()
         feed_dict[self.dropout_ph] = 1
         num_examples = len(data)
-        predictions = np.zeros([num_examples])
+        sm_preds = np.zeros([num_examples])
+        fo_preds = np.zeros([num_examples])
 
         if session is None:
             session = tf.get_default_session()
@@ -176,20 +209,30 @@ class LstmNet(object):
                 raise ValueError('No explicit session argument and no default session')
 
         with session.as_default() as session:
-            print("[*] Starting grouped evaluation")
+            print("[*] Starting patient level evaluation")
             for i in range(num_examples):
                 batch_x, _ = preprocess.padBatch(data[i])
                 feed_dict[self.data_ph] = batch_x
                 feed_dict[self.target_ph] = [labels[i]]
-                predictions[i] = session.run(self.predict_patient_op, feed_dict=feed_dict)
+                sm_preds[i], fo_preds[i] = session.run([self.predict_patient_op, self.predict_patient_nor_op], feed_dict=feed_dict)
 
+        """
         accuracy = np.sum(predictions == labels) / num_examples
         precision = metrics.precision_score(labels, predictions)
         recall = metrics.recall_score(labels, predictions)
 
-        return (accuracy, precision, recall), session
+        if to_disk:
+            file_suffix = time.strftime('%H:%M:%S', time.gmtime())
+            results_save_path = _RESULT_PREFIX + '_patient_' + file_suffix
+            with open(results_save_path, 'w') as f:
+                f.write("Patient Level Evaluation\nAcc, Prec, Recall\n %f, %f, %f" 
+                        % (accuracy, precision, recall))
+            print("[*] results saved at %s" % results_save_path)
+        """
+        print(type(fo_preds))
+        return sm_preds, fo_preds
 
-    def syllable_level_evaluate(self, data, labels, session=None):
+    def syllable_level_evaluate(self, data, labels, session=None, probability=False):
         """
           Evaluates the model per syllable, rather than on a per patient
           level
@@ -214,25 +257,41 @@ class LstmNet(object):
             if session is None:
                 raise ValueError('No explicit session argument and no default session')
 
+        if probability:
+            op = self.raw_prob
+        else:
+            op = self.predict_syllable_op
+
         with session.as_default() as session:
+            print('[*] Starting syllable level evaluation')
             s = 0
             while s < len(data):
                 e = min(s + 64, len(data))
                 batch_x = data[s : e]
                 feed_dict[self.data_ph], _ = preprocess.padBatch(batch_x)
                 feed_dict[self.target_ph] = labels[s : e]
-                predictions[s:e] = session.run(self.predict_syllable_op, feed_dict=feed_dict)
+                predictions[s:e] = session.run(op, feed_dict=feed_dict)
                 s = e
 
+        """
         accuracy = np.sum(predictions == labels) / len(data)
         precision = metrics.precision_score(labels, predictions)
         recall = metrics.recall_score(labels, predictions)
 
-        return (accuracy, precision, recall), session
+        if to_disk:
+            file_suffix = time.strftime('%H:%M:$S', time.gmtime())
+            results_save_path = _RESULT_PREFIX + '_syllable_' + file_suffix
+            with open(results_save_path, 'w') as f:
+                f.write("Syllable Level Evaluation\nAcc, Prec, Recall\n%f, %f, %f"
+                        % (accuracy, precision, recall))
+            print("[*] results saved at %s" % results_save_path)
+        """
+
+        return predictions
 
 
-    def _inference(self, lstm_state_size, softmax_hidden_size, num_classes):
-        """TODO: Docstring for inference.
+    def _inference(self, lstm_state_size, num_classes):
+        """TODO: Docstring for inferenc)
 
         :mode: TODO
         :returns: TODO
@@ -244,7 +303,12 @@ class LstmNet(object):
             lstm_output = LstmNet._lstm_2(self.data_ph, lstm_state_size, self.dropout_ph)
         else:
             lstm_output = LstmNet._bi_lstm_1(self.data_ph, lstm_state_size)
-        logits = LstmNet._softmax_layer(lstm_output, softmax_hidden_size, num_classes)
+
+        if self._mode == 3:
+            logits = LstmNet._softmax_layer(lstm_output, lstm_state_size*2, num_classes)
+        else:
+            logits = LstmNet._softmax_layer(lstm_output, lstm_state_size, num_classes)
+
         return logits
 
 
@@ -276,19 +340,20 @@ class LstmNet(object):
         :returns: TODO
 
         """
+        probs = tf.nn.softmax(self.inference_op)
+        positive_probs = tf.squeeze(tf.slice(probs, [0,1], [-1, 1]))
         pred = tf.cast(tf.argmax(self.inference_op, axis=1), "int32")
-        return pred
+        return positive_probs, pred
 
 
     def _predict_patient(self):
-        confidence_levels = tf.nn.softmax(self.inference_op)
-        confidence_levels = tf.reduce_sum(confidence_levels, reduction_indices=0)
-        return tf.arg_max(confidence_levels, 0)
-        """predWeightsRaw = tf.reduce_max(self.inference_op, reduction_indices=1)
-        predWeights = tf.nn.softmax(predWeightsRaw)
-        weightedPreds = tf.multiply(predWeights, tf.cast(self.predict_syllable_op, 'float'))
-        groupPred = tf.round(tf.reduce_sum(weightedPreds))
-        return groupPred"""
+        probs = tf.nn.softmax(self.inference_op)
+        true_probs = tf.squeeze(tf.slice(probs, [0, 1], [-1, 1]))
+        false_probs = tf.cast(1 - true_probs, tf.float64)
+        soft_majority = tf.reduce_mean(true_probs)
+        fuzzy_or = 1 - tf.reduce_prod(false_probs)
+        return soft_majority, fuzzy_or
+
 
     @staticmethod
     def _softmax_layer(lstm_output, softmax_hidden_size, num_classes):

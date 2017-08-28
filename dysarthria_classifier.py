@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import argparse
 import sys
+import pickle
 
 import tensorflow as tf
 
@@ -73,56 +74,35 @@ if mode == 1:
     print(20 * '*' + ' model 1 (Baseline)' + 20 * '*')
     print('accuracy is %f' % accuracy)
     print()
-
+    exit()
 
 # ====================================================================
 # STEP 2: Train an LSTM model.
 
-if mode == 2:
-    old_lstm = LSTMNet(1)
-    lstm = LstmNet(mode=1)
-    #trn_data, trn_targets, val_data, val_targets, tst_data, tst_targets = old_lstm.read_data()
-    """sess = lstm.train(trn_data, trn_targets,
-                      val_data=val_data,
-                      val_targets=val_targets,
-                      test_data=tst_data,
-                      test_targets=tst_targets,
-                      restore_parameters=True)"""
-    sess = lstm.load_pretrained_weights()
-    grp_train_data, grp_test_data = old_lstm.read_grouped_data()
-    with sess:
-        stats, sess = lstm.patient_level_evaluate(grp_train_data, grp_test_data)
-    accuracy, precision, recall = stats
-    print(20 * '*' + ' model 2 (LSTM 1) ' + 20 * '*')
-    print('accuracy is %f' % accuracy)
-    print("precision is %f" % precision)
-    print("recall is %f" % recall)
-    print()
+old_lstm = LSTMNet(mode=mode-1)
+lstm = LstmNet(mode=mode-1)
+"""trn_data, trn_targets, val_data, val_targets, tst_data, tst_targets = old_lstm.read_data()
+sess, path = lstm.train(trn_data, trn_targets,
+                        val_data=val_data,
+                        val_targets=val_targets,
+                        test_data=tst_data,
+                        test_targets=tst_targets,
+                        num_epochs=1)
+sess.close()
 
-# ====================================================================
-# STEP 3: Train a 2-Layer LSTM model.
-
-if mode == 3:
-    lstm = LSTMNet(2)
-    accuracy, precision, recall = lstm.train_and_evaluate(FLAGS)
-
-    # Output accuracy.
-    print(20 * '*' + ' model 3 (LSTM 2) ' + 20 * '*')
-    print('accuracy is %f' % accuracy)
-    print("precision is %f" % precision)
-    print("recall is %f" % recall)
-    print()
-
-# ====================================================================
-# STEP 4: Train a 1-Layer Bidirectional LSTM model.
-
-if mode == 4:
-    lstm = LSTMNet(3)
-    accuracy, precision, recall = lstm.train_and_evaluate(FLAGS)
-
-    # Output accuracy.
-    print(20 * '*' + ' model 4 (LSTM 3) ' + 20 * '*')
-    print('accuracy is %f' % accuracy)
-    print("precision is %f" % precision)
-    print("recall is %f" % recall)
-    print()
+sess = lstm.load_pretrained_weights()
+grp_train_data, grp_test_data = old_lstm.read_grouped_data()
+with sess:
+    stats, sess = lstm.patient_level_evaluate(grp_train_data, grp_test_data)
+accuracy, precision, recall = stats
+print(20 * '*' + ' model 2 (LSTM 1) ' + 20 * '*')
+print('accuracy is %f' % accuracy)
+print("precision is %f" % precision)
+print("recall is %f" % recall)
+print()
+"""
+with open('mfcc_full_set.pkl', 'rb') as f:
+    full_data_set = pickle.load(f)
+cross_validation_data = full_data_set[9:]
+validation_data = full_data_set[:9]
+lstm.k_fold_cross_validation(cross_validation_data, validation_data)

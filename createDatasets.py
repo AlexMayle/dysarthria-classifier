@@ -18,7 +18,9 @@ PATIENT_LABEL = 1
 SAMPLE_RATE = 44100
 MAX_LENGTH = 5  # seconds
 WAV_EXTENSION = ".wav"
-LENGTH_ERROR_MSG =  "Warning: %s is being discarded due to being too long"
+META_SUFFIX = "_meta"
+LENGTH_ERROR_MSG = "Warning: %s is being discarded due to being too long"
+
 
 def  parse_speaker(speaker_dir):
     speaker_dir = speaker_dir.split('-')
@@ -30,6 +32,12 @@ def  parse_speaker(speaker_dir):
 def parse_syllable(syllable_filename):
     syllable = syllable_filename.rstrip(WAV_EXTENSION)
     return syllable
+
+
+def extract_meta(dataset):
+    data, labels, meta_data = zip(*dataset)
+    data_and_labels = tuple(zip(data, labels))
+    return data_and_labels, meta_data
 
 
 def create_annotated_dataset(data_path, label, spkr_gender):
@@ -79,8 +87,9 @@ def run():
     print("[*] Shuffling speakers")
     random.shuffle(dataset)
 
-    assert len(dataset) == 69
-    return dataset
+    print("[*] Extracting meta data")
+    data_and_labels, meta_data = extract_meta(dataset)
+    return data_and_labels, meta_data
 
 
 def splitIntoPatches(dataset):
@@ -132,8 +141,12 @@ if __name__ == '__main__':
         print("Please provide output file name of dataset")
         exit(-1)
 
-    dataset = run()
+    dataset, meta_data = run()
 
     print("[*] Saving grouped test set to disk %s" % SAVE_PATH)
     with open(SAVE_PATH + ".pkl", "wb") as f:
         pickle.dump(dataset, f)
+
+    print("[*] Meta data saved to disk %s" % SAVE_PATH + META_SUFFIX)
+    with open(SAVE_PATH + META_SUFFIX + ".pkl", "wb") as f:
+        pickle.dump(meta_data, f)
