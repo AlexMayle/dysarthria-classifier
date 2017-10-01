@@ -3,11 +3,10 @@ import time
 import pickle
 from random import shuffle
 
-
 import numpy as np
 import tensorflow as tf
 from sklearn import metrics
-import preprocess
+from preprocess import padBatch
 from createDatasets import splitIntoPatches, splitDataAndLabels
 
 _CHECKPOINT_PREFIX = "./out/params"
