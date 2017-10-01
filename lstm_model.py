@@ -6,8 +6,7 @@ from random import shuffle
 import numpy as np
 import tensorflow as tf
 from sklearn import metrics
-from preprocess import padBatch
-from createDatasets import splitIntoPatches, splitDataAndLabels
+import preprocess
 
 _CHECKPOINT_PREFIX = "./out/params"
 _RESULT_PREFIX = "./out/results"
@@ -59,11 +58,11 @@ class LstmNet(object):
 
         """
 
-        val_set = splitIntoPatches(val_dataset)
-        val_set = splitDataAndLabels(val_set)
+        val_set = pp.splitIntoPatches(val_dataset)
+        val_set = pp.splitDataAndLabels(val_set)
         val_x, val_y = val_set
 
-        dataset = preprocess.meanAndVarNormalize(dataset, labels=True)
+        dataset = pp.meanAndVarNormalize(dataset, labels=True)
 
         examples_per_fold = len(dataset) // folds
         fold_datasets = []
@@ -73,13 +72,13 @@ class LstmNet(object):
             end_index = index + examples_per_fold
 
             train_set = dataset[:index] + dataset[end_index:]
-            train_set = splitIntoPatches(train_set)
+            train_set = pp.splitIntoPatches(train_set)
             shuffle(train_set)
-            train_set = splitDataAndLabels(train_set)
+            train_set = pp.splitDataAndLabels(train_set)
             test_set = dataset[index:end_index]
-            syl_test_set = splitIntoPatches(test_set)
-            syl_test_set = splitDataAndLabels(syl_test_set)
-            pat_test_set = splitDataAndLabels(test_set)
+            syl_test_set = pp.splitIntoPatches(test_set)
+            syl_test_set = pp.splitDataAndLabels(syl_test_set)
+            pat_test_set = pp.splitDataAndLabels(test_set)
             fold_dataset = (train_set, syl_test_set, pat_test_set)
             fold_datasets.append(fold_dataset)
 
@@ -162,7 +161,7 @@ class LstmNet(object):
                 while s < len(data):
                     e = min(s + batch_size, len(data))
                     batch_x = data[s : e]
-                    feed_dict[self.data_ph], _ = preprocess.padBatch(batch_x)
+                    feed_dict[self.data_ph], _ = pp.padBatch(batch_x)
                     feed_dict[self.target_ph] = target[s : e]
                     session.run(self.optimize_op, feed_dict=feed_dict)
                     s = e
@@ -231,7 +230,7 @@ class LstmNet(object):
         with session.as_default() as session:
             print("[*] Starting patient level evaluation")
             for i in range(num_examples):
-                batch_x, _ = preprocess.padBatch(data[i])
+                batch_x, _ = pp.padBatch(data[i])
                 feed_dict[self.data_ph] = batch_x
                 feed_dict[self.target_ph] = [labels[i]]
                 sm_preds[i], fo_preds[i] = session.run([self.predict_patient_op, self.predict_patient_nor_op], feed_dict=feed_dict)
@@ -286,7 +285,7 @@ class LstmNet(object):
             while s < len(data):
                 e = min(s + 64, len(data))
                 batch_x = data[s : e]
-                feed_dict[self.data_ph], _ = preprocess.padBatch(batch_x)
+                feed_dict[self.data_ph], _ = pp.padBatch(batch_x)
                 #feed_dict[self.target_ph] = labels[s : e]
                 predictions[s:e] = session.run(op, feed_dict=feed_dict)
                 s = e

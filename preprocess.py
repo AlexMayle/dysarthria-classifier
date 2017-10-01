@@ -1,10 +1,5 @@
 from functools import reduce
 import numpy as np
-from sklearn.decomposition import PCA
-
-SAMPLE_RATE = 44100
-MFCC_SIZE = 13
-WHITENING_EPSILON = 0.1
 
 def poolMfccs(mfccs, vectorSize):
     mfcc_size = mfccs[0].shape[-1]
@@ -88,14 +83,34 @@ def meanAndVarNormalize(dataset, labels= False):
 
     return dataset
 
-# Don't use!
-def zcaWhiten(dataset):
-    exampleLengths = [example.shape[0] for example in dataset]
-    dataMatrix = np.concatenate(dataset)
-    u, s, v = np.linalg.svd(dataset)
-    xPCA = np.matmul(u.T, x0)
-    print("PCA done")
-    delta = np.diag(np.reciprocal(s + WHITENING_EPSILON))
-    xPCAWhite = np.matmul(np.matmul(delta, u.T), xPCA)
-    xZCAWhite = np.matmul(u, xPCAWhite)
-    return np.split(xZCAWhite, exampleLengths, axis= 0)
+def splitIntoPatches(dataset):
+    """
+    Given a dataset of examples grouped by speaker
+    of the form [[[examples], label], ...] return a new dataset
+    of the form [[example, label], ...] which is not grouped by speaker
+
+    dataset:  dataset with a many to one relationship between examples and labels
+    shuffle:  If true, the newly created dataset is shuffled before being returned
+
+    return:   A dataset with a one-to-one relationship between examples and labels,
+              which may or may not be shuffled depending on the shuffle argument
+    """
+
+    patches = []
+    for examplesLabelPair in dataset:
+        ungroupedExamples = list(map(lambda x: [x, examplesLabelPair[1]], examplesLabelPair[0]))
+        patches += ungroupedExamples
+
+    return patches
+
+def splitDataAndLabels(dataset):
+   """
+   Convert a data set of the form [[data, label], ...]
+   to a set of the form [[data], [labels]]
+   """
+   data = []
+   labels = []
+   for dataLabelPair in dataset:
+       data.append(dataLabelPair[0])
+       labels.append(dataLabelPair[1])
+   return [data, labels]
