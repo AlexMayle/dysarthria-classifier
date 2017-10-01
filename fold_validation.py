@@ -102,7 +102,6 @@ def calculate_roc_and_pr_curve(predictions, labels):
 
 print("input: %s\n output: %s" % (FLAGS.input_path, FLAGS.output_path))
 
-old_lstm = LSTMNet(mode=mode-1)
 lstm = LstmNet(mode=mode-1, input_size=FLAGS.numceps)
 with open(FLAGS.input_path, 'rb') as f:
     full_data_set = pickle.load(f)
