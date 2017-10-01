@@ -1,8 +1,0 @@
-data
-.pkl
-__pycache__
-*.pkl
-out/
-.swp
-*.swp
-*.swo

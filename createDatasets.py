@@ -1,5 +1,5 @@
-import sys
 import os
+import argparse
 import pickle
 import random
 
@@ -15,14 +15,40 @@ FEMALE_HEALTHY_DIR = DATA_DIR + "female healthy"
 FEMALE_PATIENT_DIR = DATA_DIR + "female patient"
 HEALTHY_LABEL = 0
 PATIENT_LABEL = 1
-SAMPLE_RATE = 44100
 MAX_LENGTH = 5  # seconds
 WAV_EXTENSION = ".wav"
 META_SUFFIX = "_meta"
-LENGTH_ERROR_MSG = "Warning: %s is being discarded due to being too long"
+
+parser = argparse.ArgumentParser('Dataset Factory')
+parser.add_argument("--numceps",
+                    type=int,
+                    default=13,
+                    help="Number of cepstrums included in each MFCC feature. (default = 13)",)
+parser.add_argument('--lowcep_offset',
+                    type=int,
+                    default=0,
+                    help="offset from lowest cepstrum to include in MFCC features.")
+parser.add_argument('--output_path',
+                    type=str,
+                    default='',
+                    help='Directory to save the dataset')
+parser.add_argument("--sample_rate",
+                    type=int,
+                    default="44100",
+                    help="Sample rate of wav data")
+parser.add_argument("--exclude_z",
+                    action="store_true",
+                    default=False,
+                    help="Excludes syllables prefixed with 'z'")
+parser.add_argument("--exclude_zz",
+                    action="store_true",
+                    default=False,
+                    help="Excludes syllables prefixed with 'zz'")
+FLAGS = None
+FLAGS, unparsed = parser.parse_known_args()
 
 
-def  parse_speaker(speaker_dir):
+def parse_speaker(speaker_dir):
     speaker_dir = speaker_dir.split('-')
     speaker = speaker_dir[1]
     notes = speaker_dir[2:]
@@ -39,17 +65,7 @@ def extract_meta(dataset):
     data_and_labels = tuple(zip(data, labels))
     return data_and_labels, meta_data
 
-
 def create_annotated_dataset(data_path, label, spkr_gender):
-    """
-    Loads all wav files associated with each speaker,
-    groups them, and associates a label
-
-    Automatically filters out files that aren't wav files and those that are
-    too long to be single mandarin characters
-
-    Returns: A list of lists of the form [[[wavFiles], label], ...]
-    """
     examples = []
     speaker_directories = filter(lambda x: not x.startswith('.'), os.listdir(data_path))
     for spkr_directory in speaker_directories:
@@ -59,12 +75,19 @@ def create_annotated_dataset(data_path, label, spkr_gender):
         wav_files = filter(lambda x: x.endswith(WAV_EXTENSION), os.listdir(spkr_path))
         spkr_datapoints = []
         for wav_filename in wav_files:
+            # filter by syllable
+            syllable = parse_syllable(wav_filename)
+            if FLAGS.exclude_z and syllable.lower().startswith("z-"):
+                continue
+            if FLAGS.exclude_zz and syllable.lower().startswith("zz-"):
+                continue
+
             _, data = wav.read(os.path.join(spkr_path, wav_filename))
-            if len(data) / SAMPLE_RATE < MAX_LENGTH:
-                data = mfcc(data, SAMPLE_RATE)
-                spkr_datapoints.append((data, parse_syllable(wav_filename)))
-            else:
-                print(LENGTH_ERROR_MSG % wav_filename)
+            if len(data) / FLAGS.sample_rate < MAX_LENGTH:
+                highest_cepstrum = FLAGS.lowcep_offset + FLAGS.numceps
+                data = mfcc(data, FLAGS.sample_rate, numcep=highest_cepstrum)
+                data = data[:, FLAGS.lowcep_offset:]
+                spkr_datapoints.append((data, syllable))
 
         random.shuffle(spkr_datapoints)
         spkr_datapoints, syllable_annotations = zip(*spkr_datapoints)
@@ -112,15 +135,6 @@ def splitIntoPatches(dataset):
 
     return patches
 
-def convertToMfccs(groupedExamples):
-    """
-    Convert a set of the form [[[wavData], label], ...]
-    to a set of the form [[[mfccData], label], ...]
-    """
-    for examplesLabelPair in groupedExamples:
-        examplesLabelPair[0] = list(map(lambda x: mfcc(x, SAMPLE_RATE), examplesLabelPair[0]))
-    return groupedExamples
-
 def splitDataAndLabels(dataset):
    """
    Convert a data set of the form [[data, label], ...]
@@ -135,18 +149,18 @@ def splitDataAndLabels(dataset):
 
 
 if __name__ == '__main__':
-    try:
-        SAVE_PATH = sys.argv[1]
-    except IndexError:
-        print("Please provide output file name of dataset")
-        exit(-1)
+    print("Creating dataset with %d cepstrums" % FLAGS.numceps)
+    if FLAGS.exclude_z:
+        print("Excluding 'z' prefixed syllables from dataset")
+    if FLAGS.exclude_zz:
+        print("Excluding 'sh' prefixed syllables from dataset")
 
     dataset, meta_data = run()
 
-    print("[*] Saving grouped test set to disk %s" % SAVE_PATH)
-    with open(SAVE_PATH + ".pkl", "wb") as f:
+    print("[*] Saving grouped test set to disk at %s" % FLAGS.output_path + ".pkl")
+    with open(FLAGS.output_path + ".pkl", "wb") as f:
         pickle.dump(dataset, f)
 
-    print("[*] Meta data saved to disk %s" % SAVE_PATH + META_SUFFIX)
-    with open(SAVE_PATH + META_SUFFIX + ".pkl", "wb") as f:
+    print("[*] Meta data saved to disk at %s" % FLAGS.output_path + META_SUFFIX + ".pkl")
+    with open(FLAGS.output_path + META_SUFFIX + ".pkl", "wb") as f:
         pickle.dump(meta_data, f)

@@ -1,4 +1,8 @@
+import os
 import time
+import pickle
+from random import shuffle
+
 
 import numpy as np
 import tensorflow as tf
@@ -18,15 +22,16 @@ class LstmNet(object):
                  input_size=13,
                  lstm_state_size=200,
                  num_classes=2,
-                 decay=0.0,
-                 learning_rate=.001):
+                 decay=0.01,
+                 learning_rate=0.001,
+                 output_path=""):
         """TODO: to be defined1.
 
         :mode: TODO
         :hyper_parms: TODO
         """
         self._mode = mode
-
+        print(input_size)
         # Exposed placeholders
         self.data_ph = tf.placeholder(tf.float32, [None, None, input_size])
         self.target_ph = tf.placeholder(tf.int32, [None])
@@ -39,7 +44,11 @@ class LstmNet(object):
         self.raw_prob, self.predict_syllable_op = self._predict_syllable()
         self.predict_patient_op, self.predict_patient_nor_op = self._predict_patient()
 
-    def k_fold_cross_validation(self, dataset, val_dataset=None, folds=10, num_epochs=None):
+    def k_fold_cross_validation(self, dataset,
+                                val_dataset=None,
+                                folds=10,
+                                num_epochs=None,
+                                output_path=""):
         """TODO: Docstring for k_fold_cross_validation.
 
         :data: TODO
@@ -66,6 +75,7 @@ class LstmNet(object):
 
             train_set = dataset[:index] + dataset[end_index:]
             train_set = splitIntoPatches(train_set)
+            shuffle(train_set)
             train_set = splitDataAndLabels(train_set)
             test_set = dataset[index:end_index]
             syl_test_set = splitIntoPatches(test_set)
@@ -77,13 +87,26 @@ class LstmNet(object):
         sm_preds = np.array([], dtype=np.int32)
         fo_preds = np.array([], dtype=np.int32)
         syl_preds = []
+        i = 0
         for train_set, syl_test_set, pat_test_set in fold_datasets:
+            # train
             train_x, train_y = train_set
-            if num_epochs is None:
-                sess, _ = self.train(train_x, train_y, val_data=val_x, val_targets=val_y)
-            else:
-                sess, _ = self.train(train_x, train_y, val_data=val_x, val_targets=val_y,
-                                     num_epochs=num_epochs)
+            sess, saver, test_preds = self.train(train_x, train_y,
+                                                 val_data=val_x,
+                                                 val_targets=val_y,
+                                                 test_data=syl_test_set[0],
+                                                 num_epochs=num_epochs)
+            fold_output_path = "%s/fold%d" % (output_path, i)
+            if not os.path.isdir(fold_output_path):
+                os.makedirs(fold_output_path)
+            test_pred_path = fold_output_path + "/test_preds.pkl"
+            param_path = fold_output_path + "/params"
+            # Save test predictions and parameters
+            with open(test_pred_path, "wb") as f:
+                pickle.dump(test_preds, f)
+            saver.save(sess, param_path)
+
+            # test
             syl_test_x, syl_test_y = syl_test_set
             pat_test_x, pat_test_y = pat_test_set
             with sess:
@@ -93,19 +116,19 @@ class LstmNet(object):
             syl_preds.append(syl_pred)
             sm_preds = np.concatenate((sm_preds, sm_pred))
             fo_preds = np.concatenate((fo_preds, fo_pred))
+            i += 1
 
         return syl_preds, sm_preds, fo_preds
 
 
     def train(self, data, target,
               num_epochs=40,
-              batch_size=60,
-              early_stop_criteria=0.05,
+              batch_size=64,
+              early_stop_criteria=0.075,
               parameter_path=None,
               val_data=None,
               val_targets=None,
-              test_data=None,
-              test_targets=None):
+              test_data=None):
         """TODO: Docstring for train.
 
         :batch_size: TODO
@@ -117,6 +140,7 @@ class LstmNet(object):
         gpu_option = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
         config = tf.ConfigProto(gpu_options=gpu_option)
         session = tf.Session(config=config)
+        test_predictions = []
         with session.as_default() as session:
             tf.global_variables_initializer().run()
 
@@ -147,8 +171,11 @@ class LstmNet(object):
                 print('the training took: %d(s)' % (end_time - start_time))
 
                 # Show training progress on test set
-                if not (test_data is None or test_targets is None):
-                    self.syllable_level_evaluate(test_data, test_targets)
+                if not test_data is None:
+                    test_preds = self.syllable_level_evaluate(test_data, None,
+                                                              probability=True)
+                    print("it happend")
+                    test_predictions.append(test_preds)
 
                 # early stopping
                 if not (val_data is None or val_targets is None):
@@ -164,20 +191,14 @@ class LstmNet(object):
                     else:
                         GL = self._generalization_loss(max_validation_score, f1_score)
                         if GL > early_stop_criteria:
-                            if momentum_steps > 3:
+                            if momentum_steps > 4:
                                 print("Stopping Early. . .")
                                 saver.restore(session, _CHECKPOINT_PREFIX)
                                 break
                             else:
                                 momentum_steps += 1
 
-            # Save parameters
-            file_suffix = time.strftime('%H:%M:%S', time.gmtime())
-            param_save_path = _CHECKPOINT_PREFIX + '-' + file_suffix
-            saver.save(session, param_save_path)
-            print("[*] parameters saved at %s" % param_save_path)
-
-        return session, param_save_path
+        return session, saver, test_predictions
 
     def patient_level_evaluate(self, data,
                                labels,
@@ -238,8 +259,6 @@ class LstmNet(object):
           level
 
           session:     Session to run pred_op in
-          pred_op:     Op to get predictions from model
-          data:        data to be fed into X placeholder. Should be a list of
                        of numpy arrays where each row is an MFCC of the syllable
           labels:      labels to be placed into Y
 
@@ -269,7 +288,7 @@ class LstmNet(object):
                 e = min(s + 64, len(data))
                 batch_x = data[s : e]
                 feed_dict[self.data_ph], _ = preprocess.padBatch(batch_x)
-                feed_dict[self.target_ph] = labels[s : e]
+                #feed_dict[self.target_ph] = labels[s : e]
                 predictions[s:e] = session.run(op, feed_dict=feed_dict)
                 s = e
 
@@ -372,7 +391,7 @@ class LstmNet(object):
     @staticmethod
     def _lstm_1(data, lstm_state_size):
         lengths = LstmNet._actual_lengths(data)
-        lstm_cell = tf.contrib.rnn.LSTMCell(lstm_state_size)
+        lstm_cell = tf.contrib.rnn.LSTMCell(lstm_state_size, initializer=tf.contrib.layers.xavier_initializer())
         outputs, _ = tf.nn.dynamic_rnn(lstm_cell, data, sequence_length=lengths,
                                        dtype=tf.float32)
         # Get the last output for each example
@@ -386,7 +405,7 @@ class LstmNet(object):
 
         """
         lengths = LstmNet._actual_lengths(data)
-        lstm_cell = tf.contrib.rnn.LSTMBlockCell(lstm_state_size)
+        lstm_cell = tf.contrib.rnn.LSTMCell(lstm_state_size, initializer=tf.contrib.layers.xavier_initializer())
         dropout_wrapped_cell = tf.contrib.rnn.DropoutWrapper(lstm_cell,
                                                              input_keep_prob=dropout_prob,
                                                              output_keep_prob=dropout_prob)
@@ -404,7 +423,7 @@ class LstmNet(object):
 
         """
         lengths = LstmNet._actual_lengths(data)
-        lstm_cell = tf.contrib.rnn.LSTMBlockCell(lstm_state_size)
+        lstm_cell = tf.contrib.rnn.LSTMCell(lstm_state_size, initializer=tf.contrib.layers.xavier_initializer())
         outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_cell, lstm_cell, data,
                                                      sequence_length=lengths,
                                                      dtype=tf.float32)

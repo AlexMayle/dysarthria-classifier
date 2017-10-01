@@ -38,7 +38,8 @@ def loadDataSet(path):
 
 
 def poolMfccs(mfccs, vectorSize):
-    pooledMfccs = np.zeros([len(mfccs), vectorSize, 13])
+    mfcc_size = mfccs[0].shape[-1]
+    pooledMfccs = np.zeros([len(mfccs), vectorSize, mfcc_size])
     for mfcc, i in zip(mfccs, range(len(mfccs))):
         if vectorSize == len(mfcc):
             pooledMfccs[i] = mfcc
@@ -52,7 +53,7 @@ def poolMfccs(mfccs, vectorSize):
                 window = mfcc[j*stride : j*stride + windowLength]
                 if window.size != 0:
                     pooledMfccs[i,j] = np.mean(window, axis= 0)
-        
+
     return pooledMfccs
 
 def padBatch(mfccs):
@@ -62,15 +63,16 @@ def padBatch(mfccs):
 
 def nestedListMeanAndVarNormalize(dataset):
     # Calculate averages
-    totals = np.zeros(MFCC_SIZE)
+    mfcc_size = dataset[0][0].shape[-1]
+    totals = np.zeros(mfcc_size)
     numPoints = 0
     for example in dataset:
         totals += reduce(lambda x,y: x+y, map(lambda z: np.sum(z, axis= 0), example))
         numPoints += reduce(lambda x,y: x+y, map(lambda x: x.shape[0], example))
-        
+
     # Mean Normalization
     averages = totals / numPoints
-    distanceFromMean = np.zeros(MFCC_SIZE)
+    distanceFromMean = np.zeros(mfcc_size)
     for example in dataset:
         example = list(map(lambda x: x - averages, example))
         distanceFromMean += reduce(lambda x,y: x+y,
@@ -80,7 +82,7 @@ def nestedListMeanAndVarNormalize(dataset):
     variances = distanceFromMean / numPoints
     for example in dataset:
             example = list(map(lambda x: x / variances, example))
-        
+
     return dataset
 
 
@@ -91,22 +93,23 @@ def meanAndVarNormalize(dataset, labels= False):
         datasetWithoutLabels = [example[0] for example in dataset]
         datasetWithoutLabels = nestedListMeanAndVarNormalize(datasetWithoutLabels)
         return [[data, example[1]] for data, example in zip(datasetWithoutLabels, dataset)]
-    
+
     # Check if argument is a nested list
     if isinstance(dataset[0], list):
         print("--[|] Note: Normalizing grouped dataset")
         return nestedListMeanAndVarNormalize(dataset)
-    
+
+    mfcc_size = dataset[0][0].shape[-1]
     # Calculate averages
-    totals = np.zeros(MFCC_SIZE)
+    totals = np.zeros(mfcc_size)
     numPoints = 0
     for example in dataset:
         totals = totals + np.sum(example, axis= 0)
         numPoints += example.shape[0]
-        
+
     # Mean Normalization
     averages = totals / numPoints
-    distanceFromMean = np.zeros(MFCC_SIZE)
+    distanceFromMean = np.zeros(mfcc_size)
     for example in dataset:
         example = example - averages
         distanceFromMean += np.sum(np.square(example), axis= 0)
