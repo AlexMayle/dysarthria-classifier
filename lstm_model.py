@@ -29,7 +29,6 @@ class LstmNet(object):
         :hyper_parms: TODO
         """
         self._mode = mode
-        print(input_size)
         # Exposed placeholders
         self.data_ph = tf.placeholder(tf.float32, [None, None, input_size])
         self.target_ph = tf.placeholder(tf.int32, [None])
@@ -403,11 +402,13 @@ class LstmNet(object):
 
         """
         lengths = LstmNet._actual_lengths(data)
-        lstm_cell = tf.contrib.rnn.LSTMCell(lstm_state_size, initializer=tf.contrib.layers.xavier_initializer())
-        dropout_wrapped_cell = tf.contrib.rnn.DropoutWrapper(lstm_cell,
-                                                             input_keep_prob=dropout_prob,
-                                                             output_keep_prob=dropout_prob)
-        stacked_lstm = tf.contrib.rnn.MultiRNNCell([lstm_cell, dropout_wrapped_cell])
+        initializer=tf.contrib.layers.xavier_initializer()
+        lstm_cell_1 = tf.contrib.rnn.LSTMCell(lstm_state_size, initializer=initializer)
+        lstm_cell_2 = tf.contrib.rnn.LSTMCell(lstm_state_size, initializer=initializer)
+        lstm_cell_2 = tf.contrib.rnn.DropoutWrapper(lstm_cell_2,
+                                                    input_keep_prob=dropout_prob,
+                                                    output_keep_prob=dropout_prob)
+        stacked_lstm = tf.contrib.rnn.MultiRNNCell([lstm_cell_1, lstm_cell_2])
         outputs, _ = tf.nn.dynamic_rnn(stacked_lstm, data, sequence_length=lengths,
                                        dtype=tf.float32)
         # Get the last output for each example
