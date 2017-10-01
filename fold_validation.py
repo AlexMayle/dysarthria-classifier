@@ -7,7 +7,6 @@ import sys
 import pickle
 import copy
 
-from train_lstm import LSTMNet
 from lstm_model import LstmNet
 
 # Set parameters for Sparse Autoencoder
