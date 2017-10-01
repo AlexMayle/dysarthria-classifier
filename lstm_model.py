@@ -6,7 +6,7 @@ from random import shuffle
 import numpy as np
 import tensorflow as tf
 from sklearn import metrics
-import preprocess
+import preprocess as pp
 
 _CHECKPOINT_PREFIX = "./out/params"
 _RESULT_PREFIX = "./out/results"
