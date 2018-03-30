@@ -1,0 +1,106 @@
+\documentclass[conference]{IEEEtran}
+\usepackage[]{graphicx}
+\graphicspath{ {images/} }
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{blindtext, graphicx}
+\usepackage{amsmath}
+
+% correct bad hyphenation here
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\graphicspath{ {images/} }
+
+\begin{document}
+
+\title{Classifying Dysarthria Patients with Long Short-Term Memory Networks}
+
+\author{\IEEEauthorblockN{Alex Mayle}
+\IEEEauthorblockA{School of EECS \\
+Ohio University \\
+am218112@ohio.edu}}
+
+\maketitle
+
+\begin{abstract}
+This paper presents a recurrent neural network architecture for the binary classification of Mandarin speaking individuals into two classes, those who are afflicted with some form of Dysarthria, and those who are not. Specifically, a series of Long Short-Term Memory (LSTM) networks are evaluated on the task using accuracy, and the rate of both false positives and negatives as metrics. A double layer, one directional LSTM is shown to slightly outperform the others, and significantly improve upon a baseline Multi-layer Perceptron  employed for the same task. While the results are not indicative of a practical replacement for a medical diagnosis, we show that the LSTM's ability to leverage temporal information from within its inputs makes for an effective step in the pursuit of accessible Dysarthria diagnoses. 
+\end{abstract}
+
+\section{Introduction}
+There are approximately 7 million individuals in China suffering from various speech disabilities. One such disorder, Dysarthria, results in an increased difficulty to articulate phonemes, or that which distinguishes one word from another. The impact of Dysarthria is exacerbated in Mandarin speaking individuals due to the fact that variations in tone have the potential to carry different meanings. Given the amount of Chinese speakers suffering from this particular disease, and the challenges it poses to effective communication, accessible means to a diagnosis is paramount. To this end, we present a collection of Recurrent Neural Network (RNN) architectures capable of discerning those who suffer from Dysarthria, given Mandarin syllable pronunciations as input. 
+
+While there are established medical practices regarding the diagnosis of Dysarthria, such as the Frenchay Dysarthria Assessment \cite{enderby1980frenchay}, such techniques require the patient be physically present and undergo a series of examinations. In contrast, the system presented here increases accessibility by merely relying on speech as input. While it's doubtful that such a system can completely replace a diagnosis by a medical practitioner, it has the potential to provide a more accessible, less invasive, first step in seeking care. 
+
+We present a collection of Long Short-term Memory (LSTM) architectures and evaluate them through several experiments. First, we conduct a baseline experiment to test if LSTM networks provide an advantage over non-recurrent models. The recurrent networks are then evaluated on several variants of the data set to gain insight into the most effective inputs for dysarthria classification.
+
+\section{Model}
+Given an audio clip $X$, containing the pronunciation of a Mandarin syllable, the model is to produce a label $Y$ indicating whether or not the speaker suffers from Dysarthria. We refer to a positive result as a diagnosis of Dysarthria. The raw waveform $X$ is first transformed into an MFCC feature vector $X' = \{x_1, x_2,...x_t\}$, where $t$ is dependent on the length of $X$. Each element of $X'$ is then fed into a LSTM network sequentially. After $x_t$ has been input, the LSTM network produces the vector $h_t$, which is then used as input to logistic regression. Finally, the regression layer outputs the aforementioned label $Y$.  Figure \ref{fig-architecture} illustrates a single training example's path through the network. 
+
+\subsection{Pre-processing}
+We began by transforming the raw audio $X$ into an MFCC feature vector $X'$ using a sliding window of $25$ milliseconds and a $10$ millisecond stride. Each MFCC in $X' = \{x_1, x_2,...x_t\}$ consists of $n$ coefficients $x_i = \{\theta_1...\theta_{n}\}$, where $n = 13$ unless explicitly stated. In practice, the network is trained on many such inputs $X$. These were collected and normalized such that the $k$th coefficient $\theta_k$ had zero-mean and unit variance with respect to $\theta_k$ across all training examples. 
+
+Since each input $X'$ contains a varying amount of MFCC's, each mini-batch fed into the network is $0$-padded such that each $X'$ in the mini-batch has the same length $t_{max}$, where $t_{max}$ is the largest $t$ value in the mini-batch. However, we do keep track of the lengths of each $X'$ and instruct the LSTM network not to process the padded portion of each input $X'$. That is, the LSTM runs $t$ time steps for each input $X' = \{x_1, x_2,...x_t, 0_{t+1}, ..., 0_{t_{max}}\}$ in the mini-batch.
+
+\subsection{LSTM Architecture}
+After pre-processing, $X'$ is then fed into a LSTM network. As noted, because $X'$ is a time-series of MFCC's, we do not input them concurrently. Instead, we feed in one MFCC each time-step. The network produces an output $h_i$ at each time step, but only the last output $h_t$ is used as input to the logistic regression layer. The model is implemented to copy the output from the last non-zero-padded input $h_t$ to $h_{t_{max}}$. In doing so, we guarantee that the output sent to the logistic regression layer is not affected by the zero-padding.
+
+We experimented with several variants of the LSTM model, including adding layers and using a bidirectional LSTM. For the models with one layer, $L2$ regularization was used. The two-layer model employed dropout \cite{Srivastava:2014:DSW:2627435.2670313} between the LSTM layers, as well as between the last LSTM layer and logistic regression. Dropout is never applied between the time-steps, as suggested by Zaremba et al \cite{DBLP:journals/corr/ZarembaSV14}. 
+
+The standard LSTM model is able to use inputs from arbitrarily distant time steps to change its output at the current time step \cite{gers2002learning}. However, it cannot use information from subsequent time steps to affect previous ones. Bidirectional LSTM networks overcome this limitation by performing two concurrent passes on the data. One pass starts from step $0$ to $t$ as normal, while another pass starts at time step $t$ and ends at step $0$. Each pass produces an output, which we handle by concatenating them together and feeding them to the logistic regression layer.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{architecture}
+\caption{A single training example, $X$, as it flows through the network: The input is first converted to $X'$, a variable length MFCC vector of length $t$. It is then normalized with respect to the entire training dataset. Finally, each MFCC in $X'$ is input to the LSTM network sequentially. The final output $h_t$ is fed to the logistic regression layer to produce the label $Y$, indicating whether or not the speaker is afflicted with Dysarthria.}
+\label{fig-architecture}
+\end{figure}
+
+\section{Methodology}
+
+The data consists of Mandarin speaking adult men and women, where some are afflicted with Dysarthia and others are not. The breakdown of these partitions is presented in Table \ref{tab-data-partitions}.
+
+\begin{table}[h]
+\centering
+\caption{Data Set}
+\label{tab-data-partitions}
+\begin{tabular}{|l|c|c|c|}
+\hline
+\multicolumn{1}{|c|}{}  & Female   &   Male    &    Ratio       \\ \hline
+Healthy                 & 1600    &   1605     &    53.4\%      \\ \hline
+Patient                 & 1001    &   1792     &    46.6\%      \\ \hline
+Total                   & 2601    &   3397     &    100\%       \\ \hline
+\end{tabular}
+\end{table}
+
+In total, four models are tested, including a baseline model in the first experiment.
+
+\begin{enumerate}
+    \item Baseline: multi-layer Perceptron (MLP) consisting of one hidden layer that is fed into the logistic regression classifier.
+    \item LSTM-1: Single layer, one-directional LSTM starting from time step 0
+    \item LSTM-2: Double layer, one-directional LSTM starting from time step 0
+    \item Bi-LSTM-1: Single layer, bi-directional LSTM involving two concurrent passes of the training example. One starting from time step 0, and the other starting at time step $t$. 
+\end{enumerate}
+
+They all use a relatively small hidden state size of 200. Because each LSTM cell has four "banks" of parameters, each cell adds 800 parameters to the model. Meaning each model has 400, 1000, 1800, and 1800 parameters, respectively. While $Bi-LSTM-1$ has only one LSTM layer, it does two concurrent passes on the data using two different LSTM cells, giving it the same amount of parameters as $LSTM-2$. 
+
+All models were trained using Adam gradient descent \cite{DBLP:journals/corr/KingmaB14} to minimize the cross entropy between the predictions of the network and the ground truth provided by the medical practitioners who collected the data. Training occurred for 40 epochs on mini-batches of size sixty-four. 
+
+A form of early stopping was employed. Training is cut short when the ration between the current validation error $\epsilon_curr = 1 - f1_curr$ and lowest error seen thus far $\epsilon_min = 1 - f1_max$ exceeds a threshold $/alpha$. A grace period is used, such that training is only stopped if the following condition is met five times without a new minimum error. 
+
+$$ \alpha < \frac{\epsilon_curr}{\epsilon_min} - 1$$,
+where $\alpha = 7.5\%$.
+
+\input{baseline_exp}
+\input{novel_spkrs_exp}
+\input{cepstrum_exp}
+\input{syllable_types_exp}
+
+\input{discussion}
+\input{related_work}
+\input{future_work}
+\input{conclusion}
+
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+\end{document}

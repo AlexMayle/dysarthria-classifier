@@ -1,19 +1,42 @@
 from operator import itemgetter
 from functools import reduce
 from heapq import nlargest
-
 import pickle
+
+import argparse
 import numpy as np
 import sklearn.metrics as sklm
 import matplotlib.pyplot as plt
 
-from createDatasets import splitIntoPatches, splitDataAndLabels
+from preprocess import splitIntoPatches, splitDataAndLabels
+
+parser = argparse.ArgumentParser('Analyze Experiment Results')
+parser.add_argument('--save_path', "-s",
+                    type=str,
+                    default="",
+                    help='Location to save the resulting graphs')
+parser.add_argument('--data_path', '-d',
+                    type=str,
+                    default="",
+                    required=True,
+                    help='Location of results to analyze')
+
+FLAGS = None
+FLAGS, unparsed = parser.parse_known_args()
 
 PREDICTION_PATH = "out/predictions/"
+
+def max_accuracy(roc_curves):
+    results = []
+    for curve in roc_curves:
+        results.append(max(map(lambda x: (x[1] * 2793 + ((1 - x[0]) * 3205)) / 5998, zip(*curve))))
+    return results
+
+
 def syllable_frequencies(syllable_annotations):
     return {k: syllable_annotations.count(k) for k in syllable_annotations}
 
-def patient_variances(predictions, annotations):
+def fpatient_variances(predictions, annotations):
     annotations = [[name] * len(syl_list) for name, _, syl_list, _ in annotations]
     annotations = reduce(lambda x, y: x + y, annotations)
     print(len(predictions), len(predictions[0]), len(annotations))
@@ -66,6 +89,7 @@ def pr_and_roc_curves(labels, predictions):
         pr_curve_y, pr_curve_x, th_1 = sklm.precision_recall_curve(labels, predictions)
         roc_curve_x, roc_curve_y, th_2 = sklm.roc_curve(labels, predictions,
                                                         drop_intermediate=False)
+
         print('pr thresholds', th_1)
         print('roc threshholds', th_2)
         pr_curve = (pr_curve_x, pr_curve_y)
@@ -94,7 +118,9 @@ def plot_roc_and_pr_curves(title, pr_curves, roc_curves):
             plt.plot([0, 1], [0, 1], 'r-', linestyle='dashed', lw=1)
             plt.xlabel('FPR')
             plt.ylabel('TPR')
-
+        if FLAGS.save_path:
+            plt.savefig("%s/%s-%s.png" % (FLAGS.save_path, title, type_),
+                        bbox_inches="tight")
         plt.show()
 
     def format_curves(curves):
@@ -139,24 +165,22 @@ def convert_syllables_to_noisy_or(syllable_predictions, syllables_per_patient):
     return fo_predictions
 
 if __name__ == '__main__':
-    """
-    # load predictions
-    with open("3-xavier-2-847", "rb") as f:
-        bi_lstm_1_preds = pickle.load(f)
-    with open("1-xavier-2-85", "rb") as f:
+    with open("%s/lstm-1/results" % FLAGS.save_path, "rb") as f:
         lstm_1_preds = pickle.load(f)
-    with open("2-xavier-2-784", "rb") as f:
+    with open("%s/lstm-2/results" % FLAGS.save_path, "rb") as f:
         lstm_2_preds = pickle.load(f)
-    with open("mfcc_full_set-2.pkl", "rb") as f:
+    with open("%s/bi-lstm-1/results" % FLAGS.save_path, "rb") as f:
+        bi_lstm_1_preds = pickle.load(f)
+    with open("%s.pkl" % FLAGS.data_path, "rb") as f:
         full_data_set = pickle.load(f)
-    """
-    with open("mfcc_full_set-2.pkl", "rb") as f:
-        full_data_set = pickle.load(f)
-    with open("out/test-experiment/trial-1/lstm-1/results", "rb") as f:
-        lstm_2_preds = lstm_1_preds = bi_lstm_1_preds = pickle.load(f)
-    with open("mfcc_full_set-2_meta.pkl", "rb") as f:
+    with open("%s_meta.pkl" % FLAGS.data_path, "rb") as f:
         full_annotations = pickle.load(f)
         full_annotations = full_annotations[9:]
+    """
+    with open("out/with_shuffle_predictions3-lstm2", "rb") as f:
+        lstm_2_preds = lstm_1_preds = bi_lstm_1_preds = pickle.load(f)
+    """
+
 
     syl_labels = splitIntoPatches(full_data_set[9:])
     syl_labels = splitDataAndLabels(syl_labels)[1]
@@ -195,6 +219,10 @@ if __name__ == '__main__':
     syl_pr_curves, syl_roc_curves = pr_and_roc_curves(syl_labels, syl_preds)
     sm_pr_curves, sm_roc_curves = pr_and_roc_curves(labels, sm_preds)
     fo_pr_curves, fo_roc_curves = pr_and_roc_curves(labels, fo_preds)
+
+    print(max_accuracy(syl_roc_curves))
+    exit()
+
     # plot the curves
     plot_roc_and_pr_curves("Syllable Evaluation", syl_pr_curves, syl_roc_curves)
     plot_roc_and_pr_curves("Soft Majority Evaluation", sm_pr_curves, sm_roc_curves)

@@ -115,38 +115,6 @@ def run():
     return data_and_labels, meta_data
 
 
-def splitIntoPatches(dataset):
-    """
-    Given a dataset of examples grouped by speaker
-    of the form [[[examples], label], ...] return a new dataset
-    of the form [[example, label], ...] which is not grouped by speaker
-
-    dataset:  dataset with a many to one relationship between examples and labels
-    shuffle:  If true, the newly created dataset is shuffled before being returned
-
-    return:   A dataset with a one-to-one relationship between examples and labels,
-              which may or may not be shuffled depending on the shuffle argument
-    """
-
-    patches = []
-    for examplesLabelPair in dataset:
-        ungroupedExamples = list(map(lambda x: [x, examplesLabelPair[1]], examplesLabelPair[0]))
-        patches += ungroupedExamples
-
-    return patches
-
-def splitDataAndLabels(dataset):
-   """
-   Convert a data set of the form [[data, label], ...]
-   to a set of the form [[data], [labels]]
-   """
-   data = []
-   labels = []
-   for dataLabelPair in dataset:
-       data.append(dataLabelPair[0])
-       labels.append(dataLabelPair[1])
-   return [data, labels]
-
 
 if __name__ == '__main__':
     print("Creating dataset with %d cepstrums" % FLAGS.numceps)
