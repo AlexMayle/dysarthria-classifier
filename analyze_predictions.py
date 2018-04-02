@@ -11,20 +11,28 @@ import matplotlib.pyplot as plt
 from preprocess import splitIntoPatches, splitDataAndLabels
 
 parser = argparse.ArgumentParser('Analyze Experiment Results')
-parser.add_argument('--save_path', "-s",
+parser.add_argument('--pred_path', '-p',
                     type=str,
                     default="",
-                    help='Location to save the resulting graphs')
+                    required=True,
+                    help=('Directory to find the resulting predictions from the \
+                          experiment. Also saves graphs here if --save_path is \
+                          not provided.'))
 parser.add_argument('--data_path', '-d',
                     type=str,
                     default="",
                     required=True,
-                    help='Location of results to analyze')
+                    help=('Directory of pickled object containing the dataset \
+                           used for the experiment'))
+parser.add_argument('--save_path', "-s",
+                    type=str,
+                    default="",
+                    help=('Directory to save the resulting graphs. \
+                           Defaults to --pred_path.'))
+
 
 FLAGS = None
 FLAGS, unparsed = parser.parse_known_args()
-
-PREDICTION_PATH = "out/predictions/"
 
 def max_accuracy(roc_curves):
     results = []
@@ -35,29 +43,6 @@ def max_accuracy(roc_curves):
 
 def syllable_frequencies(syllable_annotations):
     return {k: syllable_annotations.count(k) for k in syllable_annotations}
-
-def fpatient_variances(predictions, annotations):
-    annotations = [[name] * len(syl_list) for name, _, syl_list, _ in annotations]
-    annotations = reduce(lambda x, y: x + y, annotations)
-    print(len(predictions), len(predictions[0]), len(annotations))
-    assert len(predictions[0]) == len(annotations)
-    variances = syllable_variances(predictions, annotations)
-    return variances
-
-def syllable_variances(predictions, syllable_annotations):
-    counts = syllable_frequencies(syllable_annotations)
-    syllable_var_dicts = []
-    for pred_set in predictions:
-        sums = dict()
-        sums = {k: sums.get(k, 0) + v for k, v in zip(syllable_annotations, pred_set)}
-        avgs = {k: v / counts[k] for (k, v) in sums.items()}
-        residuals = [(k, (v - avgs[k]) ** 2) for k, v in zip(syllable_annotations, pred_set)]
-        res_sums = dict()
-        res_sums = {k: res_sums.get(k, 0) + v for (k, v) in residuals}
-        variances = {k: v / counts[k] for (k, v) in res_sums.items() if counts[k] > 10}
-        syllable_var_dicts.append(variances)
-
-    return syllable_var_dicts
 
 
 def syllable_accuracies(labels, predictions, annotations):
@@ -165,11 +150,12 @@ def convert_syllables_to_noisy_or(syllable_predictions, syllables_per_patient):
     return fo_predictions
 
 if __name__ == '__main__':
-    with open("%s/lstm-1/results" % FLAGS.save_path, "rb") as f:
+    FLAGS.save_path = FLAGS.pred_path if FLAGS.save_path == '' else FLAGS.save_path
+    with open("%s/lstm-1/results" % FLAGS.pred_path, "rb") as f:
         lstm_1_preds = pickle.load(f)
-    with open("%s/lstm-2/results" % FLAGS.save_path, "rb") as f:
+    with open("%s/lstm-2/results" % FLAGS.pred_path, "rb") as f:
         lstm_2_preds = pickle.load(f)
-    with open("%s/bi-lstm-1/results" % FLAGS.save_path, "rb") as f:
+    with open("%s/bi-lstm-1/results" % FLAGS.pred_path, "rb") as f:
         bi_lstm_1_preds = pickle.load(f)
     with open("%s.pkl" % FLAGS.data_path, "rb") as f:
         full_data_set = pickle.load(f)
@@ -181,9 +167,10 @@ if __name__ == '__main__':
         lstm_2_preds = lstm_1_preds = bi_lstm_1_preds = pickle.load(f)
     """
 
-
+    # Get labels
     syl_labels = splitIntoPatches(full_data_set[9:])
     syl_labels = splitDataAndLabels(syl_labels)[1]
+    # Get predictions
     lstm_1_preds, labels = lstm_1_preds
     lstm_2_preds, _ = lstm_2_preds
     bi_lstm_1_preds, _ = bi_lstm_1_preds
@@ -194,22 +181,15 @@ if __name__ == '__main__':
     fo_preds = convert_syllables_to_noisy_or(syl_preds, syl_per_patient)
     print(len(syl_labels), len(syl_preds[0]))
     assert len(syl_labels) == len(syl_preds[0])
+    # Get annotations
     syl_annotations = [annotation[2] for annotation in full_annotations]
     syl_annotations = reduce(lambda x, y: x + y, syl_annotations)
     pat_annotations = [[name] * len(syl_list) for name, _, syl_list, _, in full_annotations]
     pat_annotations = reduce(lambda x, y: x + y, pat_annotations)
 
-    """
-    with open("csv_export", "wb") as f:
-        syl_annotations = [[name] * len(syl_list) for name, _, syl_list, _ in full_annotations]
-        syl_annotations = reduce(lambda x, y: x + y, annotations)
-        pickle.dump(zip(syl_labels, syl_annotations, *syl_preds, *sm_preds), f)
-    exit()
-    """
+    # Prints the greatest accuracy out of all the folds
     syl_accuracies = syllable_accuracies(syl_labels, syl_preds, syl_annotations)
     pat_accuracies = syllable_accuracies(syl_labels, syl_preds, pat_annotations)
-    #syl_variances = syllable_variances(syl_preds, annotations)
-    #pat_variances = patient_variances(syl_preds, full_annotations)
     print("Top Missed syllables")
     for a, b in zip(syl_accuracies, pat_accuracies):
         print(nlargest(20, a.items(), itemgetter(1)), "\n")
