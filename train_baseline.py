@@ -49,16 +49,16 @@ class Baseline(object):
     testX[0] = poolMfccs(testX[0], POOLED_MFCC_SIZE)
     
     print("[*] Saving pooled mfcc features for later use")
-    with open("pooled_train_set.pkl", "wb") as f:
+    with open("mfcc_data/pooled_train_set.pkl", "wb") as f:
       pickle.dump(trainX, f)
-    with open("pooled_test_set.pkl", "wb") as f:
+    with open("mfcc_data/pooled_test_set.pkl", "wb") as f:
       pickle.dump(testX, f)    
     
     """
     print("[*] Loading pooled mfcc features from disk")
-    with open("pooled_train_set.pkl", "rb") as f:
+    with open("mfcc_data/pooled_train_set.pkl", "rb") as f:
       trainX = pickle.load(f)
-    with open("pooled_test_set.pkl", "rb") as f:
+    with open("mfcc_data/pooled_test_set.pkl", "rb") as f:
       testX = pickle.load(f)
       
     """
