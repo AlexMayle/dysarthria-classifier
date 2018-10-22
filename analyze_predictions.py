@@ -34,39 +34,6 @@ parser.add_argument('--save_path', "-s",
 FLAGS = None
 FLAGS, unparsed = parser.parse_known_args()
 
-def max_accuracy(roc_curves):
-    results = []
-    for curve in roc_curves:
-        results.append(max(map(lambda x: (x[1] * 2793 + ((1 - x[0]) * 3205)) / 5998, zip(*curve))))
-    return results
-
-
-def syllable_frequencies(syllable_annotations):
-    return {k: syllable_annotations.count(k) for k in syllable_annotations}
-
-
-def syllable_accuracies(labels, predictions, annotations):
-    # ungroup annoations
-    syllable_acc_dicts = []
-    for pred_set in predictions:
-        assert len(pred_set) == len(labels) == len(annotations)
-        annotated_preds = zip(pred_set, labels, annotations)
-        annotated_preds = sorted(annotated_preds, key=lambda x: x[0])
-        i = 1
-        while i < len(annotated_preds):
-            if annotated_preds[i - 1][1] <= annotated_preds[i][1]:
-                i += 1
-            else:
-                break
-        counts = syllable_frequencies(annotations)
-        misses = dict()
-        while i < len(annotated_preds):
-            if annotated_preds[i][1] == 0:
-                misses[annotated_preds[i][2]] = misses.get(annotated_preds[i][2], 0) + 1
-            i += 1
-            syllable_accs = {k: v / counts[k] for k, v in misses.items() if counts[k] > 10}
-        syllable_acc_dicts.append(syllable_accs)
-    return syllable_acc_dicts
 
 def pr_and_roc_curves(labels, predictions):
 
@@ -75,8 +42,6 @@ def pr_and_roc_curves(labels, predictions):
         roc_curve_x, roc_curve_y, th_2 = sklm.roc_curve(labels, predictions,
                                                         drop_intermediate=False)
 
-        print('pr thresholds', th_1)
-        print('roc threshholds', th_2)
         pr_curve = (pr_curve_x, pr_curve_y)
         roc_curve = (roc_curve_x, roc_curve_y)
         return pr_curve, roc_curve
@@ -162,10 +127,6 @@ if __name__ == '__main__':
     with open("%s_meta.pkl" % FLAGS.data_path, "rb") as f:
         full_annotations = pickle.load(f)
         full_annotations = full_annotations[9:]
-    """
-    with open("out/with_shuffle_predictions3-lstm2", "rb") as f:
-        lstm_2_preds = lstm_1_preds = bi_lstm_1_preds = pickle.load(f)
-    """
 
     # Get labels
     syl_labels = splitIntoPatches(full_data_set[9:])
@@ -179,7 +140,6 @@ if __name__ == '__main__':
     syl_per_patient = [len(x[0]) for x in full_data_set[9:]]
     syl_preds = [np.concatenate(x) for x in syl_preds]
     fo_preds = convert_syllables_to_noisy_or(syl_preds, syl_per_patient)
-    print(len(syl_labels), len(syl_preds[0]))
     assert len(syl_labels) == len(syl_preds[0])
     # Get annotations
     syl_annotations = [annotation[2] for annotation in full_annotations]
@@ -187,21 +147,10 @@ if __name__ == '__main__':
     pat_annotations = [[name] * len(syl_list) for name, _, syl_list, _, in full_annotations]
     pat_annotations = reduce(lambda x, y: x + y, pat_annotations)
 
-    # Prints the greatest accuracy out of all the folds
-    syl_accuracies = syllable_accuracies(syl_labels, syl_preds, syl_annotations)
-    pat_accuracies = syllable_accuracies(syl_labels, syl_preds, pat_annotations)
-    print("Top Missed syllables")
-    for a, b in zip(syl_accuracies, pat_accuracies):
-        print(nlargest(20, a.items(), itemgetter(1)), "\n")
-        print(nlargest(20, b.items(), itemgetter(1)), "\n")
-
     # Calculate pr and roc curve data
     syl_pr_curves, syl_roc_curves = pr_and_roc_curves(syl_labels, syl_preds)
     sm_pr_curves, sm_roc_curves = pr_and_roc_curves(labels, sm_preds)
     fo_pr_curves, fo_roc_curves = pr_and_roc_curves(labels, fo_preds)
-
-    print(max_accuracy(syl_roc_curves))
-    exit()
 
     # plot the curves
     plot_roc_and_pr_curves("Syllable Evaluation", syl_pr_curves, syl_roc_curves)
