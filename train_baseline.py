@@ -3,6 +3,7 @@ import tensorflow as tf
 import math
 import pickle
 import numpy as np
+from sklearn import metrics
 
 from python_speech_features import mfcc
 from preprocess import *
@@ -173,9 +174,13 @@ class Baseline(object):
             
           end_time = time.time()
           print ('the training took: %d(s)' % (end_time - start_time))
-
+          
           total_correct = sess.run(accuracy, feed_dict={X: testX, Y: testY, is_train: False})
           print ('accuracy of the trained model %f' % (total_correct / testX.shape[0]))
           print ()
+      
           
+        predictions = sess.run(pred, feed_dict={X: testX, Y: testY, is_train: False}) 
+        print("***PRECISION: ", metrics.precision_score(testY, predictions))
+        print("****RECALL: ", metrics.recall_score(testY, predictions))
         return sess.run(accuracy, feed_dict={X: testX, Y: testY, is_train: False}) / len(testX)
