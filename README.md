@@ -11,11 +11,11 @@ pipenv install
 The main function is `fold_validation.py`. It takes many arguments, but the defaults are the ones used in the paper. `mode`, `--input_path`, and `--output_path` should be provided though. 
 `python fold_validation.py MODE --input_path input/path --output_path output/path`
 Where MODE corresponds to a model, following the table below. 
-| Mode # | Model |
-| ------ | ------ |
-| 2 | LSTM-1 |
-| 3 | LSTM-2 |
-| 4 | LSTM-3 |
+```
+2 := LSTM-1
+3 := LSTM-2
+4 := Bi-LSTM-1
+```
 
 To reproduce the results, run each model on the corresponding dataset for an expirment. Then, use the appropriate analysis python script to produce the graphs. See the section for a specific expirment to train, predict, and analyze the results of each expirment.
 
