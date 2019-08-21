@@ -71,11 +71,11 @@ We'll train each model with each of the three datasets containing different dist
 python fold_validation.py 2 --input_path mfcc_data/mfcc_full_set-2.pkl --output_path output_pred_folder/lstm-1/
 python fold_validation.py 3 --input_path mfcc_data/mfcc_full_set-2.pkl --output_path output_pred_folder/lstm-2
 python fold_validation.py 4 --input_path mfcc_data/mfcc_full_set-2.pkl --output_path output_pred_folder/bi-lstm-1
-# Repeat for the second distribution of syllables
+# Repeat for data with no "cv" 
 python fold_validation.py 2 --input_path mfcc_data/without_z.pkl --output_path output_pred_folder-without-z/lstm-1/
 python fold_validation.py 3 --input_path mfcc_data/without_z.pkl --output_path output_pred_folder-without-z/lstm-2/
 python fold_validation.py 4 --input_path mfcc_data/without_z.pkl --output_path output_pred_folder-without-z/bi-lstm-1/
-# Repeat for the third distribution of syllables
+# Repeat for data with no "c/a/"
 python fold_validation.py 2 --input_path mfcc_data/without_zz.pkl --output_path output_pred_folder-without-zz/lstm-1/
 python fold_validation.py 3 --input_path mfcc_data/without_zz.pkl --output_path output_pred_folder-without-zz/lstm-2/
 python fold_validation.py 4 --input_path mfcc_data/without_zz.pkl --output_path output_pred_folder-without-zz/bi-lstm-1/
